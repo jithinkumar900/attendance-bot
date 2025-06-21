@@ -361,30 +361,62 @@ app.command('/review', async ({ command, ack, say, client }) => {
         const { user_id } = command;
         const today = Utils.getCurrentDate();
         
+        // Check for active sessions first
+        const activeLeave = await db.getUserActiveLeaveSession(user_id);
+        const activeExtraWork = await db.getUserActiveExtraWorkSession(user_id);
+        
+        // Get completed summary
         const summary = await db.getUserDailySummary(user_id, today);
         
-        if (!summary) {
-            await say({
-                text: "📊 *Today's Summary*\n• No leave taken today\n• No extra work needed\n✅ *All good!*",
-                response_type: 'ephemeral'
-            });
-            return;
-        }
-
-        const userInfo = await client.users.info({ user: user_id });
-        const userName = userInfo.user.real_name || userInfo.user.name;
+        // Build status message
+        let statusMessage = "📊 *Today's Status*\n\n";
         
-        const summaryMessage = Utils.formatUserDailySummary(summary, userName);
+        // Add active sessions info
+        if (activeLeave) {
+            const plannedDuration = Utils.formatDuration(activeLeave.planned_duration);
+            const currentDuration = Math.round((new Date() - new Date(activeLeave.start_time)) / (1000 * 60));
+            const actualDuration = Utils.formatDuration(currentDuration);
+            const exceeded = currentDuration > activeLeave.planned_duration;
+            
+            statusMessage += `🔴 *ACTIVE LEAVE SESSION*\n`;
+            statusMessage += `• Planned: ${plannedDuration}\n`;
+            statusMessage += `• Current: ${actualDuration} ${exceeded ? '⚠️ *EXCEEDED*' : ''}\n`;
+            statusMessage += `• Reason: ${activeLeave.reason}\n\n`;
+        }
+        
+        if (activeExtraWork) {
+            const currentDuration = Math.round((new Date() - new Date(activeExtraWork.start_time)) / (1000 * 60));
+            const actualDuration = Utils.formatDuration(currentDuration);
+            
+            statusMessage += `🟢 *ACTIVE EXTRA WORK SESSION*\n`;
+            statusMessage += `• Duration: ${actualDuration}\n`;
+            statusMessage += `• Reason: ${activeExtraWork.reason}\n\n`;
+        }
+        
+        // Add completed summary
+        if (summary && (summary.total_leave_minutes > 0 || summary.total_extra_work_minutes > 0)) {
+            const userInfo = await client.users.info({ user: user_id });
+            const userName = userInfo.user.real_name || userInfo.user.name;
+            statusMessage += `📈 *Completed Today*\n`;
+            statusMessage += `• Leave: ${Utils.formatDuration(summary.total_leave_minutes)}\n`;
+            statusMessage += `• Extra Work: ${Utils.formatDuration(summary.total_extra_work_minutes)}\n`;
+            statusMessage += `• Pending: ${Utils.formatDuration(summary.pending_extra_work_minutes)}\n`;
+        }
+        
+        // If no activity at all
+        if (!activeLeave && !activeExtraWork && (!summary || (summary.total_leave_minutes === 0 && summary.total_extra_work_minutes === 0))) {
+            statusMessage += "✅ *All good! No leave or extra work today.*";
+        }
         
         await say({
-            text: summaryMessage,
+            text: statusMessage,
             response_type: 'ephemeral'
         });
 
     } catch (error) {
         console.error('Error in review:', error);
         await say({
-            text: "Sorry, there was an error retrieving your balance. Please try again.",
+            text: "Sorry, there was an error retrieving your status. Please try again.",
             response_type: 'ephemeral'
         });
     }
@@ -551,6 +583,59 @@ app.action('extra_work_stop', async ({ body, ack, say }) => {
 
     } catch (error) {
         console.error('Error in extra work stop:', error);
+    }
+});
+
+// ================================
+// AUTOMATIC TIME EXCEEDED CHECKS
+// ================================
+
+// Check for exceeded leave times every minute
+cron.schedule('* * * * *', async () => {
+    try {
+        // Get all active leave sessions
+        const activeSession = await new Promise((resolve, reject) => {
+            db.db.all(
+                `SELECT * FROM leave_sessions 
+                WHERE end_time IS NULL 
+                AND datetime('now') > datetime(start_time, '+' || planned_duration || ' minutes')`,
+                (err, sessions) => {
+                    if (err) reject(err);
+                    else resolve(sessions);
+                }
+            );
+        });
+
+        for (const session of activeSession) {
+            try {
+                const userInfo = await app.client.users.info({ user: session.user_id });
+                const userName = userInfo.user.real_name || userInfo.user.name;
+                const plannedDuration = Utils.formatDuration(session.planned_duration);
+                const currentDuration = Math.round((new Date() - new Date(session.start_time)) / (1000 * 60));
+                const actualDuration = Utils.formatDuration(currentDuration);
+
+                // Send DM notification about time exceeded
+                await app.client.chat.postMessage({
+                    channel: session.user_id,
+                    text: `⏰ *Time Exceeded Alert*\n\nHi ${userName}! Your planned leave time of *${plannedDuration}* has been exceeded.\nYou've been away for *${actualDuration}* so far.\n\nPlease use \`/return\` in ${config.bot.transparencyChannel} when you're back to update everyone!`
+                });
+
+                console.log(`⚠️ Sent time exceeded alert to ${userName}`);
+
+                // Mark this session as notified (add a flag to prevent spam)
+                db.db.run(
+                    `UPDATE leave_sessions SET reason = reason || ' [NOTIFIED]' 
+                    WHERE id = ? AND reason NOT LIKE '%[NOTIFIED]%'`,
+                    [session.id]
+                );
+
+            } catch (error) {
+                console.error(`Error sending time exceeded alert to user ${session.user_id}:`, error);
+            }
+        }
+
+    } catch (error) {
+        console.error('Error in time exceeded check:', error);
     }
 });
 

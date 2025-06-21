@@ -185,9 +185,12 @@ class Database {
         return new Promise((resolve, reject) => {
             // Calculate totals for the day
             const queries = [
-                `SELECT COALESCE(SUM(actual_duration), 0) as total_leave 
+                `SELECT COALESCE(SUM(CASE 
+                    WHEN end_time IS NOT NULL THEN actual_duration 
+                    ELSE ROUND((strftime('%s', 'now') - strftime('%s', start_time)) / 60.0)
+                END), 0) as total_leave 
                 FROM leave_sessions 
-                WHERE user_id = ? AND date = ? AND end_time IS NOT NULL`,
+                WHERE user_id = ? AND date = ?`,
                 
                 `SELECT COALESCE(SUM(duration), 0) as total_extra_work 
                 FROM extra_work_sessions 
@@ -294,7 +297,10 @@ class Database {
                     u.name,
                     u.id,
                     COUNT(ls.id) as total_leave_sessions,
-                    COALESCE(SUM(ls.actual_duration), 0) as total_leave_minutes,
+                    COALESCE(SUM(CASE 
+                        WHEN ls.end_time IS NOT NULL THEN ls.actual_duration 
+                        ELSE ROUND((strftime('%s', 'now') - strftime('%s', ls.start_time)) / 60.0)
+                    END), 0) as total_leave_minutes,
                     COUNT(ews.id) as total_extra_work_sessions,
                     COALESCE(SUM(ews.duration), 0) as total_extra_work_minutes,
                     COALESCE(SUM(ds.pending_extra_work_minutes), 0) as total_pending_minutes
@@ -302,7 +308,7 @@ class Database {
                 LEFT JOIN leave_sessions ls ON u.id = ls.user_id 
                     AND ls.date BETWEEN ? AND ?
                 LEFT JOIN extra_work_sessions ews ON u.id = ews.user_id 
-                    AND ews.date BETWEEN ? AND ?
+                    AND ews.date BETWEEN ? AND ? AND ews.end_time IS NOT NULL
                 LEFT JOIN daily_summaries ds ON u.id = ds.user_id 
                     AND ds.date BETWEEN ? AND ?
                 GROUP BY u.id, u.name
