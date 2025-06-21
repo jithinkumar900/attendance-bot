@@ -571,6 +571,284 @@ class Utils {
             ]
         };
     }
+
+    // ================================
+    // INTERACTIVE ADMIN MODALS
+    // ================================
+
+    // Create Live Status Modal
+    static createLiveStatusModal(liveStatus) {
+        const { activeLeave, activeExtraWork, pendingWork } = liveStatus;
+        
+        const blocks = [
+            {
+                type: "header",
+                text: {
+                    type: "plain_text",
+                    text: "🚨 Live Status Dashboard"
+                }
+            },
+            {
+                type: "divider"
+            }
+        ];
+
+        // Active Leave Sessions
+        if (activeLeave.length > 0) {
+            blocks.push({
+                type: "section",
+                text: {
+                    type: "mrkdwn",
+                    text: `🔴 *CURRENTLY ON LEAVE (${activeLeave.length}):*`
+                }
+            });
+            
+            activeLeave.forEach(session => {
+                const plannedDuration = this.formatDuration(session.planned_duration);
+                const currentDuration = Math.round((new Date() - new Date(session.start_time)) / (1000 * 60));
+                const actualDuration = this.formatDuration(currentDuration);
+                const exceeded = currentDuration > session.planned_duration;
+                const status = exceeded ? `${actualDuration} ⚠️ *EXCEEDED*` : `${actualDuration}`;
+                
+                blocks.push({
+                    type: "context",
+                    elements: [
+                        {
+                            type: "mrkdwn",
+                            text: `👤 *${session.user_name}* • ${session.reason} • ${status}`
+                        }
+                    ]
+                });
+            });
+        }
+
+        // Active Extra Work Sessions
+        if (activeExtraWork.length > 0) {
+            blocks.push({
+                type: "section",
+                text: {
+                    type: "mrkdwn",
+                    text: `🟢 *CURRENTLY WORKING EXTRA (${activeExtraWork.length}):*`
+                }
+            });
+            
+            activeExtraWork.forEach(session => {
+                const currentDuration = Math.round((new Date() - new Date(session.start_time)) / (1000 * 60));
+                const actualDuration = this.formatDuration(currentDuration);
+                
+                blocks.push({
+                    type: "context",
+                    elements: [
+                        {
+                            type: "mrkdwn",
+                            text: `👤 *${session.user_name}* • ${actualDuration} worked`
+                        }
+                    ]
+                });
+            });
+        }
+
+        // Pending Work Alerts
+        if (pendingWork.length > 0) {
+            blocks.push({
+                type: "section",
+                text: {
+                    type: "mrkdwn",
+                    text: `⚠️ *PENDING WORK ALERTS (${pendingWork.length}):*`
+                }
+            });
+            
+            const grouped = {};
+            pendingWork.forEach(item => {
+                if (!grouped[item.user_name]) {
+                    grouped[item.user_name] = { name: item.user_name, total: 0, days: 0 };
+                }
+                grouped[item.user_name].total += item.pending_extra_work_minutes;
+                grouped[item.user_name].days++;
+            });
+
+            Object.values(grouped).forEach(user => {
+                const totalPending = this.formatDuration(user.total);
+                const daysText = user.days > 1 ? `${user.days} days` : '1 day';
+                
+                blocks.push({
+                    type: "context",
+                    elements: [
+                        {
+                            type: "mrkdwn",
+                            text: `👤 *${user.name}* • ${totalPending} pending (${daysText})`
+                        }
+                    ]
+                });
+            });
+        }
+
+        // All clear message
+        if (activeLeave.length === 0 && activeExtraWork.length === 0 && pendingWork.length === 0) {
+            blocks.push({
+                type: "section",
+                text: {
+                    type: "mrkdwn",
+                    text: "✅ *All quiet! No active sessions or pending work.*"
+                }
+            });
+        }
+
+        return {
+            type: 'modal',
+            title: { type: 'plain_text', text: 'Live Status' },
+            close: { type: 'plain_text', text: 'Close' },
+            blocks
+        };
+    }
+
+    // Create Reports Modal
+    static createReportsModal() {
+        return {
+            type: 'modal',
+            title: { type: 'plain_text', text: 'Admin Reports' },
+            close: { type: 'plain_text', text: 'Close' },
+            blocks: [
+                {
+                    type: "header",
+                    text: {
+                        type: "plain_text",
+                        text: "📊 Generate Reports"
+                    }
+                },
+                {
+                    type: "divider"
+                },
+                {
+                    type: "section",
+                    text: {
+                        type: "mrkdwn",
+                        text: "Select the type of report you'd like to generate:"
+                    }
+                },
+                {
+                    type: "actions",
+                    elements: [
+                        {
+                            type: "button",
+                            text: { type: "plain_text", text: "📅 Weekly Report" },
+                            action_id: "report_weekly",
+                            style: "primary"
+                        },
+                        {
+                            type: "button",
+                            text: { type: "plain_text", text: "📆 Monthly Report" },
+                            action_id: "report_monthly"
+                        }
+                    ]
+                },
+                {
+                    type: "context",
+                    elements: [
+                        {
+                            type: "mrkdwn",
+                            text: "💡 Reports include leave sessions, extra work, and pending tasks"
+                        }
+                    ]
+                }
+            ]
+        };
+    }
+
+    // Create Analytics Modal
+    static createAnalyticsModal(analytics) {
+        const blocks = [
+            {
+                type: "header",
+                text: {
+                    type: "plain_text",
+                    text: "📈 Analytics Dashboard"
+                }
+            },
+            {
+                type: "divider"
+            }
+        ];
+
+        if (analytics.length === 0) {
+            blocks.push({
+                type: "section",
+                text: {
+                    type: "mrkdwn",
+                    text: "📊 No data available for analytics."
+                }
+            });
+        } else {
+            const totalSessions = analytics.reduce((sum, day) => sum + day.daily_sessions, 0);
+            const totalExceeded = analytics.reduce((sum, day) => sum + day.exceeded_sessions, 0);
+            const avgDuration = analytics.reduce((sum, day) => sum + (day.avg_duration || 0), 0) / analytics.length;
+            const maxDuration = Math.max(...analytics.map(day => day.max_duration || 0));
+            const exceedRate = totalSessions > 0 ? ((totalExceeded / totalSessions) * 100).toFixed(1) : 0;
+
+            // Summary Section
+            blocks.push({
+                type: "section",
+                fields: [
+                    {
+                        type: "mrkdwn",
+                        text: `*📊 Total Sessions:*\n${totalSessions}`
+                    },
+                    {
+                        type: "mrkdwn",
+                        text: `*⏰ Avg Duration:*\n${this.formatDuration(Math.round(avgDuration))}`
+                    },
+                    {
+                        type: "mrkdwn",
+                        text: `*🔥 Max Duration:*\n${this.formatDuration(maxDuration)}`
+                    },
+                    {
+                        type: "mrkdwn",
+                        text: `*⚠️ Exceed Rate:*\n${exceedRate}%`
+                    }
+                ]
+            });
+
+            blocks.push({
+                type: "divider"
+            });
+
+            // Recent Trends
+            blocks.push({
+                type: "section",
+                text: {
+                    type: "mrkdwn",
+                    text: "*📈 Recent Trends (Last 7 Days):*"
+                }
+            });
+
+            analytics.slice(0, 7).forEach(day => {
+                const date = this.formatDate(day.date);
+                const sessions = day.daily_sessions;
+                const avgDur = this.formatDuration(Math.round(day.avg_duration || 0));
+                const exceeded = day.exceeded_sessions;
+                
+                let trendText = `*${date}:* ${sessions} sessions, avg ${avgDur}`;
+                if (exceeded > 0) trendText += ` (${exceeded} exceeded)`;
+                
+                blocks.push({
+                    type: "context",
+                    elements: [
+                        {
+                            type: "mrkdwn",
+                            text: trendText
+                        }
+                    ]
+                });
+            });
+        }
+
+        return {
+            type: 'modal',
+            title: { type: 'plain_text', text: 'Analytics' },
+            close: { type: 'plain_text', text: 'Close' },
+            blocks
+        };
+    }
 }
 
 module.exports = Utils; 

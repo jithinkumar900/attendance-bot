@@ -214,7 +214,7 @@ app.command('/unplanned', async ({ command, ack, client }) => {
 
     } catch (error) {
         console.error('Error in unplanned modal:', error);
-        // Fallback to simple message
+        // Fallback to simple message - Force restart v2
         await client.chat.postEphemeral({
             channel: command.channel_id,
             user: command.user_id,
@@ -666,36 +666,33 @@ async function getLiveAdminStatus() {
 // BUTTON INTERACTIONS
 // ================================
 
-// Admin Dashboard Actions
-app.action('admin_live_status', async ({ body, ack, respond }) => {
+// Admin Dashboard Actions - Interactive Modals
+app.action('admin_live_status', async ({ body, ack, client }) => {
     await ack();
     try {
         const liveStatus = await getLiveAdminStatus();
-        const statusMessage = Utils.formatLiveStatus(liveStatus);
-        await respond({
-            text: statusMessage.text,
-            blocks: statusMessage.blocks,
-            replace_original: false,
-            response_type: 'ephemeral'
+        const modal = Utils.createLiveStatusModal(liveStatus);
+        
+        await client.views.open({
+            trigger_id: body.trigger_id,
+            view: modal
         });
     } catch (error) {
         console.error('Error in admin live status:', error);
-        await respond({ text: "Error loading live status.", response_type: 'ephemeral' });
     }
 });
 
-app.action('admin_reports', async ({ body, ack, respond }) => {
+app.action('admin_reports', async ({ body, ack, client }) => {
     await ack();
     try {
-        await respond({
-            text: "📊 Select Report Type",
-            blocks: Utils.getReportsMenu(),
-            replace_original: false,
-            response_type: 'ephemeral'
+        const modal = Utils.createReportsModal();
+        
+        await client.views.open({
+            trigger_id: body.trigger_id,
+            view: modal
         });
     } catch (error) {
         console.error('Error in admin reports:', error);
-        await respond({ text: "Error loading reports menu.", response_type: 'ephemeral' });
     }
 });
 
@@ -732,20 +729,18 @@ app.action('admin_users', async ({ body, ack, respond }) => {
     }
 });
 
-app.action('admin_analytics', async ({ body, ack, respond }) => {
+app.action('admin_analytics', async ({ body, ack, client }) => {
     await ack();
     try {
         const analytics = await getAnalyticsData();
-        const analyticsMessage = Utils.formatAnalytics(analytics);
-        await respond({
-            text: analyticsMessage.text,
-            blocks: analyticsMessage.blocks,
-            replace_original: false,
-            response_type: 'ephemeral'
+        const modal = Utils.createAnalyticsModal(analytics);
+        
+        await client.views.open({
+            trigger_id: body.trigger_id,
+            view: modal
         });
     } catch (error) {
         console.error('Error in admin analytics:', error);
-        await respond({ text: "Error loading analytics.", response_type: 'ephemeral' });
     }
 });
 
