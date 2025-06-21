@@ -1,5 +1,6 @@
 require('dotenv').config();
 const { App } = require('@slack/bolt');
+const express = require('express');
 const cron = require('node-cron');
 const axios = require('axios');
 const Database = require('./database');
@@ -43,8 +44,12 @@ const activePrompts = new Map();
 // KEEPALIVE MECHANISM (Prevent Render Spin-Down)
 // ================================
 
+// Create Express server for HTTP endpoints (separate from Slack Socket Mode)
+const expressApp = express();
+const PORT = process.env.PORT || 3000;
+
 // Simple HTTP endpoint for health checks and Render port binding
-app.receiver.router.get('/', (req, res) => {
+expressApp.get('/', (req, res) => {
     res.status(200).json({ 
         status: 'alive', 
         timestamp: new Date().toISOString(),
@@ -55,7 +60,7 @@ app.receiver.router.get('/', (req, res) => {
     });
 });
 
-app.receiver.router.get('/ping', (req, res) => {
+expressApp.get('/ping', (req, res) => {
     res.status(200).json({ 
         status: 'alive', 
         timestamp: new Date().toISOString(),
@@ -64,12 +69,17 @@ app.receiver.router.get('/ping', (req, res) => {
     });
 });
 
-app.receiver.router.get('/health', (req, res) => {
+expressApp.get('/health', (req, res) => {
     res.status(200).json({ 
         status: 'healthy',
         service: 'attendance-bot',
         timestamp: new Date().toISOString()
     });
+});
+
+// Start Express server
+expressApp.listen(PORT, () => {
+    console.log(`🌐 HTTP server running on port ${PORT}`);
 });
 
 // Self-ping every 10 minutes to prevent spin-down
@@ -632,7 +642,6 @@ cron.schedule('30 3 * * 1', async () => {
         console.log(`  • Admin password set: ${config.bot.adminPassword ? '✅' : '❌'}`);
         console.log(`  • Half-day form: ${config.bot.halfDayFormUrl}`);
         console.log(`  • Keepalive: ${RENDER_URL ? '✅ Enabled' : '❌ Disabled (add RENDER_URL env var)'}`);
-        console.log(`  • Server running on port: ${process.env.PORT || 3000}`);
         console.log('🚀 Available commands:');
         console.log('  /unplanned <duration> <reason> - Start unplanned leave');
         console.log('  /return - End current leave');
