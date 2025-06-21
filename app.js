@@ -17,8 +17,8 @@ const config = {
         halfDayFormUrl: process.env.HALF_DAY_FORM_URL || 'https://forms.google.com/your-half-day-form-link'
     },
     notifications: {
-        notifyUsers: process.env.NOTIFY_USERS ? process.env.NOTIFY_USERS.split(',') : ['@hr-team', '@manager'],
-        notifyChannels: process.env.NOTIFY_CHANNELS ? process.env.NOTIFY_CHANNELS.split(',') : ['#hr-notifications'],
+        // Optional notification channel - only used for important admin notifications
+        notifyChannel: process.env.NOTIFY_CHANNEL || null, // Set to null to disable
         hourlyPrompts: process.env.HOURLY_PROMPTS !== 'false',
         dailySummary: process.env.DAILY_SUMMARY !== 'false',
         weeklyReminders: process.env.WEEKLY_REMINDERS !== 'false'
@@ -82,11 +82,12 @@ expressApp.listen(PORT, () => {
     console.log(`🌐 HTTP server running on port ${PORT}`);
 });
 
-// Self-ping every 10 minutes to prevent spin-down
+// Self-ping every 5 minutes to prevent spin-down (more frequent for better reliability)
 const RENDER_URL = process.env.RENDER_URL; // We'll add this as env var
 
 if (RENDER_URL) {
-    cron.schedule('*/10 * * * *', async () => {
+    // Main keepalive - every 5 minutes
+    cron.schedule('*/5 * * * *', async () => {
         try {
             await axios.get(`${RENDER_URL}/ping`, { timeout: 5000 });
             console.log('🔄 Keepalive ping successful');
@@ -94,7 +95,65 @@ if (RENDER_URL) {
             console.log('⚠️ Keepalive ping failed (normal if service is spinning up)');
         }
     });
+    
+    // Additional lightweight ping every 2 minutes during business hours (9 AM - 6 PM IST)
+    cron.schedule('*/2 9-18 * * 1-5', async () => {
+        try {
+            await axios.get(`${RENDER_URL}/health`, { timeout: 3000 });
+            console.log('🔄 Business hours ping successful');
+        } catch (error) {
+            console.log('⚠️ Business hours ping failed');
+        }
+    });
 }
+
+// Track Socket Mode connection status
+let socketConnected = false;
+let lastActivityTime = new Date();
+
+// Monitor Socket Mode connection
+app.receiver.on('socket_mode_connect', () => {
+    socketConnected = true;
+    console.log('🔗 Socket Mode connected');
+});
+
+app.receiver.on('socket_mode_disconnect', () => {
+    socketConnected = false;
+    console.log('❌ Socket Mode disconnected');
+});
+
+// Update activity timestamp on any interaction
+function updateActivity() {
+    lastActivityTime = new Date();
+}
+
+// Warmup function to ensure service is ready
+async function warmupService() {
+    try {
+        if (RENDER_URL) {
+            await axios.get(`${RENDER_URL}/ping`, { timeout: 3000 });
+        }
+        // Give Socket Mode a moment to ensure connection
+        if (!socketConnected) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+    } catch (error) {
+        console.log('⚠️ Warmup ping failed (service may be cold starting)');
+    }
+}
+
+// Proactive connection health monitor - check every minute for long idle periods
+cron.schedule('* * * * *', () => {
+    const idleMinutes = Math.floor((new Date() - lastActivityTime) / (1000 * 60));
+    
+    // If idle for more than 30 minutes and during business hours, do a light warmup
+    if (idleMinutes > 30 && idleMinutes < 60) {
+        const currentHour = new Date().getHours();
+        if (currentHour >= 9 && currentHour <= 18) { // Business hours IST (adjusted for timezone)
+            warmupService().catch(() => {}); // Silent warmup
+        }
+    }
+});
 
 // ================================
 // SLASH COMMANDS
@@ -103,6 +162,10 @@ if (RENDER_URL) {
 // Start unplanned leave - Interactive Modal
 app.command('/unplanned', async ({ command, ack, client }) => {
     await ack();
+    
+    // Update activity and ensure service is warmed up
+    updateActivity();
+    await warmupService();
     
     try {
         const { user_id, trigger_id } = command;
@@ -214,11 +277,22 @@ app.command('/unplanned', async ({ command, ack, client }) => {
 
     } catch (error) {
         console.error('Error in unplanned modal:', error);
-        // Fallback to simple message - Force restart v2
+        
+        // Provide helpful error message based on the type of error
+        let errorMessage = "Sorry, there was an error opening the leave form.";
+        
+        if (error.message && error.message.includes('timeout')) {
+            errorMessage += " The service may be warming up. Please wait 10 seconds and try again.";
+        } else if (!socketConnected) {
+            errorMessage += " Connection is being restored. Please try again in a moment.";
+        } else {
+            errorMessage += " Please try again.";
+        }
+        
         await client.chat.postEphemeral({
             channel: command.channel_id,
             user: command.user_id,
-            text: "Sorry, there was an error opening the leave form. Please try again."
+            text: errorMessage
         });
     }
 });
@@ -226,6 +300,7 @@ app.command('/unplanned', async ({ command, ack, client }) => {
 // End unplanned leave
 app.command('/return', async ({ command, ack, say, client }) => {
     await ack();
+    updateActivity();
     
     try {
         const { user_id } = command;
@@ -303,6 +378,7 @@ app.command('/return', async ({ command, ack, say, client }) => {
 // Start extra work
 app.command('/work-start', async ({ command, ack, say, client }) => {
     await ack();
+    updateActivity();
     
     try {
         const { user_id, text = 'Compensating unplanned leave' } = command;
@@ -353,6 +429,7 @@ app.command('/work-start', async ({ command, ack, say, client }) => {
 // End extra work
 app.command('/work-end', async ({ command, ack, say, client }) => {
     await ack();
+    updateActivity();
     
     try {
         const { user_id } = command;
@@ -408,6 +485,7 @@ app.command('/work-end', async ({ command, ack, say, client }) => {
 // Check leave balance
 app.command('/review', async ({ command, ack, say, client }) => {
     await ack();
+    updateActivity();
     
     try {
         const { user_id } = command;
@@ -479,6 +557,7 @@ app.command('/review', async ({ command, ack, say, client }) => {
 // Admin command - Interactive Dashboard
 app.command('/admin', async ({ command, ack, say, client }) => {
     await ack();
+    updateActivity();
     
     try {
         const { user_id, text } = command;
@@ -1134,15 +1213,16 @@ app.view('unplanned_leave_modal', async ({ ack, body, client, view }) => {
             text: `✅ *Leave started successfully!*\n\n⏰ Duration: ${formattedDuration}\n🕐 Expected return: ${returnTime}\n📝 Reason: ${reason}\n\nPosted to ${config.bot.transparencyChannel} for transparency. 👍`
         });
         
-        // Notify configured users/channels
-        for (const user of config.notifications.notifyUsers) {
+        // Optional admin notification (only if channel is configured)
+        // Note: This is minimal to maintain Socket Mode stability
+        if (config.notifications.notifyChannel) {
             try {
                 await client.chat.postMessage({
-                    channel: user,
-                    text: `📋 *Leave Notification*\n${message}`
+                    channel: config.notifications.notifyChannel,
+                    text: `📋 Leave started: ${userName}`
                 });
             } catch (error) {
-                console.error(`Failed to notify ${user}:`, error);
+                console.error(`Failed to notify admin channel:`, error);
             }
         }
         
@@ -1442,6 +1522,7 @@ cron.schedule('30 3 * * 1', async () => {
         console.log('📍 Configuration:');
         console.log(`  • Max unplanned hours: ${config.bot.maxUnplannedHours}h`);
         console.log(`  • Transparency channel: ${config.bot.transparencyChannel}`);
+        console.log(`  • Admin notifications: ${config.notifications.notifyChannel ? '✅ ' + config.notifications.notifyChannel : '❌ Disabled'}`);
         console.log(`  • Admin password set: ${config.bot.adminPassword ? '✅' : '❌'}`);
         console.log(`  • Half-day form: ${config.bot.halfDayFormUrl}`);
         console.log(`  • Keepalive: ${RENDER_URL ? '✅ Enabled' : '❌ Disabled (add RENDER_URL env var)'}`);
