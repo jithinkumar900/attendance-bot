@@ -458,9 +458,10 @@ app.command('/admin', async ({ command, ack, say, client }) => {
         const { user_id, text } = command;
         
         if (!text || !Utils.validateAdminPassword(text.trim(), config.bot.adminPassword)) {
-            await say({
-                text: "❌ Invalid admin password.",
-                response_type: 'ephemeral'
+            await client.chat.postEphemeral({
+                channel: command.channel_id,
+                user: user_id,
+                text: "❌ Invalid admin password."
             });
             return;
         }
@@ -469,17 +470,20 @@ app.command('/admin', async ({ command, ack, say, client }) => {
         const liveStatus = await getLiveAdminStatus();
         const dashboardMessage = Utils.formatAdminDashboard(liveStatus);
 
-        await say({
+        // Use client.chat.postEphemeral to ensure privacy
+        await client.chat.postEphemeral({
+            channel: command.channel_id,
+            user: user_id,
             text: dashboardMessage.text,
-            blocks: dashboardMessage.blocks,
-            response_type: 'ephemeral'
+            blocks: dashboardMessage.blocks
         });
 
     } catch (error) {
         console.error('Error in admin command:', error);
-        await say({
-            text: "Sorry, there was an error loading the admin dashboard. Please try again.",
-            response_type: 'ephemeral'
+        await client.chat.postEphemeral({
+            channel: command.channel_id,
+            user: user_id,
+            text: "Sorry, there was an error loading the admin dashboard. Please try again."
         });
     }
 });
