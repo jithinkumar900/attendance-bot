@@ -268,29 +268,33 @@ app.command('/return', async ({ command, ack, say, client }) => {
             const totalLeaveFormatted = Utils.formatDuration(summary.totalLeave);
             const halfDayMessage = Utils.formatHalfDayMessage(totalLeaveFormatted, config.bot.halfDayFormUrl);
             
-            await say({
-                text: halfDayMessage,
-                response_type: 'ephemeral'
+            await client.chat.postEphemeral({
+                channel: command.channel_id,
+                user: user_id,
+                text: halfDayMessage
             });
         }
 
-        // Confirm to user
-        await say({
-            text: `✅ Leave ended! Actual duration: ${actualDuration}`,
-            response_type: 'ephemeral'
+        // Confirm to user (private)
+        await client.chat.postEphemeral({
+            channel: command.channel_id,
+            user: user_id,
+            text: `✅ Leave ended! Actual duration: ${actualDuration}`
         });
 
     } catch (error) {
         console.error('Error in return:', error);
         if (error.message.includes('No active leave session')) {
-            await say({
-                text: "You don't have an active leave session to end.",
-                response_type: 'ephemeral'
+            await client.chat.postEphemeral({
+                channel: command.channel_id,
+                user: command.user_id,
+                text: "You don't have an active leave session to end."
             });
         } else {
-            await say({
-                text: "Sorry, there was an error ending your leave session. Please try again.",
-                response_type: 'ephemeral'
+            await client.chat.postEphemeral({
+                channel: command.channel_id,
+                user: command.user_id,
+                text: "Sorry, there was an error ending your leave session. Please try again."
             });
         }
     }
@@ -306,9 +310,10 @@ app.command('/work-start', async ({ command, ack, say, client }) => {
         // Check if user already has an active extra work session
         const activeSession = await db.getUserActiveExtraWorkSession(user_id);
         if (activeSession) {
-            await say({
-                text: `You already have an active extra work session. Use \`/work-end\` first.`,
-                response_type: 'ephemeral'
+            await client.chat.postEphemeral({
+                channel: command.channel_id,
+                user: user_id,
+                text: `You already have an active extra work session. Use \`/work-end\` first.`
             });
             return;
         }
@@ -320,9 +325,15 @@ app.command('/work-start', async ({ command, ack, say, client }) => {
         // Start extra work session
         await db.startExtraWorkSession(user_id, text);
 
-        // Send DM to user about extra work start
-        await client.chat.postMessage({
-            channel: user_id,
+        // Post public message about extra work start
+        await say({
+            text: `⏰ *${userName}* started extra work session to compensate for unplanned leave.`
+        });
+
+        // Send private confirmation to user
+        await client.chat.postEphemeral({
+            channel: command.channel_id,
+            user: user_id,
             text: `⏰ *Extra work session started!*\n\nI'll check on you every hour and auto-complete when you've worked enough time. Good luck! 💪`
         });
 
@@ -331,15 +342,16 @@ app.command('/work-start', async ({ command, ack, say, client }) => {
 
     } catch (error) {
         console.error('Error in work-start:', error);
-        await say({
-            text: "Sorry, there was an error starting your extra work session. Please try again.",
-            response_type: 'ephemeral'
+        await client.chat.postEphemeral({
+            channel: command.channel_id,
+            user: command.user_id,
+            text: "Sorry, there was an error starting your extra work session. Please try again."
         });
     }
 });
 
 // End extra work
-app.command('/work-end', async ({ command, ack, say }) => {
+app.command('/work-end', async ({ command, ack, say, client }) => {
     await ack();
     
     try {
@@ -348,6 +360,10 @@ app.command('/work-end', async ({ command, ack, say }) => {
         // End the extra work session
         const session = await db.endExtraWorkSession(user_id);
         const duration = Utils.formatDuration(session.duration);
+
+        // Get user info for public message
+        const userInfo = await client.users.info({ user: user_id });
+        const userName = userInfo.user.real_name || userInfo.user.name;
 
         // Update daily summary
         const today = Utils.getCurrentDate();
@@ -359,23 +375,31 @@ app.command('/work-end', async ({ command, ack, say }) => {
             activePrompts.delete(user_id);
         }
 
-        // Send DM to user about extra work end
-        await client.chat.postMessage({
-            channel: user_id,
+        // Post public message about extra work completion
+        await say({
+            text: `✅ *${userName}* completed extra work session. Duration: ${duration}`
+        });
+
+        // Send private confirmation to user
+        await client.chat.postEphemeral({
+            channel: command.channel_id,
+            user: user_id,
             text: `✅ *Extra work session completed!*\n\nDuration: ${duration}\nGreat job! 🎉`
         });
 
     } catch (error) {
         console.error('Error in work-end:', error);
         if (error.message.includes('No active extra work session')) {
-            await say({
-                text: "You don't have an active extra work session to end.",
-                response_type: 'ephemeral'
+            await client.chat.postEphemeral({
+                channel: command.channel_id,
+                user: command.user_id,
+                text: "You don't have an active extra work session to end."
             });
         } else {
-            await say({
-                text: "Sorry, there was an error ending your extra work session. Please try again.",
-                response_type: 'ephemeral'
+            await client.chat.postEphemeral({
+                channel: command.channel_id,
+                user: command.user_id,
+                text: "Sorry, there was an error ending your extra work session. Please try again."
             });
         }
     }
@@ -436,16 +460,18 @@ app.command('/review', async ({ command, ack, say, client }) => {
             statusMessage += "✅ *All good! No leave or extra work today.*";
         }
         
-        await say({
-            text: statusMessage,
-            response_type: 'ephemeral'
+        await client.chat.postEphemeral({
+            channel: command.channel_id,
+            user: user_id,
+            text: statusMessage
         });
 
     } catch (error) {
         console.error('Error in review:', error);
-        await say({
-            text: "Sorry, there was an error retrieving your status. Please try again.",
-            response_type: 'ephemeral'
+        await client.chat.postEphemeral({
+            channel: command.channel_id,
+            user: command.user_id,
+            text: "Sorry, there was an error retrieving your status. Please try again."
         });
     }
 });
@@ -1101,7 +1127,7 @@ app.view('unplanned_leave_modal', async ({ ack, body, client, view }) => {
             text: message
         });
         
-        // Send success message to user
+        // Send success message to user (private)
         await client.chat.postEphemeral({
             channel: config.bot.transparencyChannel,
             user: user_id,
