@@ -167,20 +167,71 @@ app.command('/unplanned', async ({ command, ack, client }) => {
         // Check if user already has an active leave session
         const activeSession = await db.getUserActiveLeaveSession(user_id);
         if (activeSession) {
+            // Calculate current duration and remaining time
+            const currentDuration = Math.round((new Date() - new Date(activeSession.start_time)) / (1000 * 60));
+            const plannedDuration = activeSession.planned_duration;
+            const remainingTime = Math.max(0, plannedDuration - currentDuration);
+            
             await client.views.open({
                 trigger_id,
                 view: {
                     type: 'modal',
-                    callback_id: 'leave_error_modal',
+                    callback_id: 'extend_leave_modal',
                     title: { type: 'plain_text', text: 'Already on Leave' },
-                    close: { type: 'plain_text', text: 'Close' },
+                    submit: { type: 'plain_text', text: 'Extend Leave' },
+                    close: { type: 'plain_text', text: 'Cancel' },
+                    private_metadata: JSON.stringify({ sessionId: activeSession.id, currentDuration, plannedDuration }),
                     blocks: [
                         {
                             type: 'section',
                             text: {
                                 type: 'mrkdwn',
-                                text: '⚠️ *You already have an active leave session.*\n\nPlease use `/return` first to end your current session before starting a new one.'
+                                text: `⏰ *Current Leave Status:*\n• Started: ${Utils.formatDuration(currentDuration)} ago\n• Planned Duration: ${Utils.formatDuration(plannedDuration)}\n• Time Remaining: ${Utils.formatDuration(remainingTime)}\n\n*Would you like to extend your leave duration?*`
                             }
+                        },
+                        {
+                            type: 'input',
+                            block_id: 'extend_hours',
+                            element: {
+                                type: 'static_select',
+                                placeholder: { type: 'plain_text', text: 'Additional hours' },
+                                action_id: 'hours_select',
+                                options: [
+                                    { text: { type: 'plain_text', text: '0 hours' }, value: '0' },
+                                    { text: { type: 'plain_text', text: '1 hour' }, value: '1' },
+                                    { text: { type: 'plain_text', text: '2 hours' }, value: '2' },
+                                    { text: { type: 'plain_text', text: '3 hours' }, value: '3' },
+                                    { text: { type: 'plain_text', text: '4 hours' }, value: '4' }
+                                ],
+                                initial_option: { text: { type: 'plain_text', text: '0 hours' }, value: '0' }
+                            },
+                            label: { type: 'plain_text', text: '➕ Additional Hours' }
+                        },
+                        {
+                            type: 'input',
+                            block_id: 'extend_minutes',
+                            element: {
+                                type: 'static_select',
+                                placeholder: { type: 'plain_text', text: 'Additional minutes' },
+                                action_id: 'minutes_select',
+                                options: [
+                                    { text: { type: 'plain_text', text: '0 minutes' }, value: '0' },
+                                    { text: { type: 'plain_text', text: '15 minutes' }, value: '15' },
+                                    { text: { type: 'plain_text', text: '30 minutes' }, value: '30' },
+                                    { text: { type: 'plain_text', text: '45 minutes' }, value: '45' }
+                                ],
+                                initial_option: { text: { type: 'plain_text', text: '15 minutes' }, value: '15' }
+                            },
+                            label: { type: 'plain_text', text: '⏰ Additional Minutes' }
+                        },
+                        {
+                            type: 'context',
+                            elements: [
+                                {
+                                    type: 'mrkdwn',
+                                    text: '💡 *Or use `/return` to end your current session and start fresh*'
+                                }
+                            ]
                         }
                     ]
                 }
@@ -1330,6 +1381,88 @@ app.view('unplanned_leave_modal', async ({ ack, body, client, view }) => {
             channel: config.bot.transparencyChannel,
             user: body.user.id,
             text: "❌ Sorry, there was an error starting your leave session. Please try again."
+        });
+    }
+});
+
+// Handle extend leave modal submission
+app.view('extend_leave_modal', async ({ ack, body, client, view }) => {
+    await ack();
+    
+    try {
+        const user_id = body.user.id;
+        
+        // Parse the private metadata
+        const metadata = JSON.parse(view.private_metadata);
+        const { sessionId, currentDuration, plannedDuration } = metadata;
+        
+        // Extract values from the modal
+        const values = view.state.values;
+        
+        // Get additional hours and minutes
+        const addHours = parseInt(values.extend_hours?.hours_select?.selected_option?.value || '0');
+        const addMinutes = parseInt(values.extend_minutes?.minutes_select?.selected_option?.value || '0');
+        
+        // Calculate additional duration in minutes
+        const additionalDuration = (addHours * 60) + addMinutes;
+        
+        // Validate extension
+        if (additionalDuration === 0) {
+            return {
+                response_action: 'errors',
+                errors: {
+                    extend_minutes: 'Please select at least 15 minutes to extend'
+                }
+            };
+        }
+        
+        // Calculate new total planned duration
+        const newPlannedDuration = plannedDuration + additionalDuration;
+        
+        if (newPlannedDuration > 480) { // 8 hours max total
+            return {
+                response_action: 'errors',
+                errors: {
+                    extend_hours: 'Total duration cannot exceed 8 hours'
+                }
+            };
+        }
+        
+        // Get user info
+        const userInfo = await client.users.info({ user: user_id });
+        const userName = userInfo.user.real_name || userInfo.user.name;
+        
+        // Update the leave session in database
+        await db.extendLeaveSession(sessionId, additionalDuration);
+        
+        // Calculate new return time
+        const newReturnTime = Utils.calculateReturnTime(newPlannedDuration);
+        const additionalTimeFormatted = Utils.formatDuration(additionalDuration);
+        const newTotalFormatted = Utils.formatDuration(newPlannedDuration);
+        
+        // Send transparency message about extension
+        const extensionMessage = `⏰ *${userName}* extended leave by *${additionalTimeFormatted}* (new total: *${newTotalFormatted}*, return by *${newReturnTime}*)`;
+        
+        await client.chat.postMessage({
+            channel: config.bot.transparencyChannel,
+            text: extensionMessage
+        });
+        
+        // Send success message to user (private)
+        await client.chat.postEphemeral({
+            channel: config.bot.transparencyChannel,
+            user: user_id,
+            text: `✅ *Leave extended successfully!*\n\n➕ Extended by: ${additionalTimeFormatted}\n⏱️ New total duration: ${newTotalFormatted}\n🕐 New expected return: ${newReturnTime}\n\nUpdate posted to ${config.bot.transparencyChannel} for transparency. 👍`
+        });
+        
+    } catch (error) {
+        console.error('Error processing extend leave modal:', error);
+        
+        // Send error message to user
+        await client.chat.postEphemeral({
+            channel: config.bot.transparencyChannel,
+            user: body.user.id,
+            text: "❌ Sorry, there was an error extending your leave session. Please try again."
         });
     }
 });

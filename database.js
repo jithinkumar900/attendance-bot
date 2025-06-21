@@ -129,6 +129,38 @@ class Database {
         });
     }
 
+    // Extend an active leave session
+    async extendLeaveSession(sessionId, additionalMinutes) {
+        return new Promise((resolve, reject) => {
+            this.db.get(
+                `SELECT * FROM leave_sessions WHERE id = ? AND end_time IS NULL`,
+                [sessionId],
+                (err, session) => {
+                    if (err) reject(err);
+                    else if (!session) reject(new Error('No active leave session found with that ID'));
+                    else {
+                        const newPlannedDuration = session.planned_duration + additionalMinutes;
+                        
+                        this.db.run(
+                            `UPDATE leave_sessions 
+                            SET planned_duration = ? 
+                            WHERE id = ?`,
+                            [newPlannedDuration, sessionId],
+                            function(err) {
+                                if (err) reject(err);
+                                else resolve({ 
+                                    ...session, 
+                                    planned_duration: newPlannedDuration,
+                                    extended_by: additionalMinutes 
+                                });
+                            }
+                        );
+                    }
+                }
+            );
+        });
+    }
+
     // Extra work session management
     async startExtraWorkSession(userId, reason = 'Compensating unplanned leave') {
         const now = new Date();
