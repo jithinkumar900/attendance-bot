@@ -1,6 +1,7 @@
 require('dotenv').config();
 const { App } = require('@slack/bolt');
 const cron = require('node-cron');
+const axios = require('axios');
 const Database = require('./database');
 const Utils = require('./utils');
 
@@ -37,6 +38,53 @@ const db = new Database(process.env.DATABASE_PATH);
 
 // Store active extra work prompts to avoid duplicates
 const activePrompts = new Map();
+
+// ================================
+// KEEPALIVE MECHANISM (Prevent Render Spin-Down)
+// ================================
+
+// Simple HTTP endpoint for health checks and Render port binding
+app.receiver.router.get('/', (req, res) => {
+    res.status(200).json({ 
+        status: 'alive', 
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+        message: 'Attendance bot is running!',
+        timezone: 'Asia/Kolkata',
+        keepalive: RENDER_URL ? 'enabled' : 'disabled'
+    });
+});
+
+app.receiver.router.get('/ping', (req, res) => {
+    res.status(200).json({ 
+        status: 'alive', 
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+        message: 'Attendance bot is running!' 
+    });
+});
+
+app.receiver.router.get('/health', (req, res) => {
+    res.status(200).json({ 
+        status: 'healthy',
+        service: 'attendance-bot',
+        timestamp: new Date().toISOString()
+    });
+});
+
+// Self-ping every 10 minutes to prevent spin-down
+const RENDER_URL = process.env.RENDER_URL; // We'll add this as env var
+
+if (RENDER_URL) {
+    cron.schedule('*/10 * * * *', async () => {
+        try {
+            await axios.get(`${RENDER_URL}/ping`, { timeout: 5000 });
+            console.log('🔄 Keepalive ping successful');
+        } catch (error) {
+            console.log('⚠️ Keepalive ping failed (normal if service is spinning up)');
+        }
+    });
+}
 
 // ================================
 // SLASH COMMANDS
@@ -123,7 +171,7 @@ app.command('/unplanned', async ({ command, ack, say, client }) => {
             try {
                 await client.chat.postMessage({
                     channel: user,
-                    text: `📋 **Leave Notification**\n${message}`
+                    text: `📋 *Leave Notification*\n${message}`
                 });
             } catch (error) {
                 console.error(`Failed to notify ${user}:`, error);
@@ -154,6 +202,18 @@ app.command('/return', async ({ command, ack, say, client }) => {
         const userName = userInfo.user.real_name || userInfo.user.name;
 
         const actualDuration = Utils.formatDuration(session.actualDuration);
+        const plannedDuration = Utils.formatDuration(session.planned_duration);
+
+        // Check if actual time exceeded planned time
+        if (session.actualDuration > session.planned_duration) {
+            const exceededBy = Utils.formatDuration(session.actualDuration - session.planned_duration);
+            
+            // Send DM about time exceeded
+            await client.chat.postMessage({
+                channel: user_id,
+                text: `⚠️ *Time Exceeded Alert*\n\nYou planned to be away for *${plannedDuration}* but were actually away for *${actualDuration}*.\nExceeded by: *${exceededBy}*\n\nNext time, please use \`/return\` in ${config.bot.transparencyChannel} when you return to update everyone!`
+            });
+        }
 
         // Send transparency message
         const message = Utils.formatLeaveEndMessage(userName, actualDuration);
@@ -295,7 +355,7 @@ app.command('/review', async ({ command, ack, say, client }) => {
         
         if (!summary) {
             await say({
-                text: "📊 **Today's Summary**\n• No leave taken today\n• No extra work needed\n✅ **All good!**",
+                text: "📊 *Today's Summary*\n• No leave taken today\n• No extra work needed\n✅ *All good!*",
                 response_type: 'ephemeral'
             });
             return;
@@ -488,28 +548,37 @@ app.action('extra_work_stop', async ({ body, ack, say }) => {
 // SCHEDULED TASKS
 // ================================
 
-// End of day summary (6 PM weekdays)
-cron.schedule('0 18 * * 1-5', async () => {
+// End of day summary (6 PM IST weekdays)
+cron.schedule('30 12 * * 1-5', async () => {
     try {
         console.log('Running end-of-day summary...');
         
         const today = Utils.getCurrentDate();
-        const allUsers = await db.getAllUsersWithPendingWork(0); // Get all users for today
+        const usersWithPendingWork = await db.getAllUsersWithPendingWork(0); // Get users with pending work today
         
-        for (const user of allUsers) {
+        if (usersWithPendingWork.length === 0) {
+            console.log('✅ No users with pending work today - no notifications sent');
+            return;
+        }
+        
+        for (const user of usersWithPendingWork) {
             try {
                 const summary = await db.getUserDailySummary(user.id, today);
-                if (summary && (summary.total_leave_minutes > 0 || summary.pending_extra_work_minutes > 0)) {
-                    
+                
+                // Only notify users who have pending extra work
+                if (summary && summary.pending_extra_work_minutes > 0) {
                     const userInfo = await app.client.users.info({ user: user.id });
                     const userName = userInfo.user.real_name || userInfo.user.name;
                     
                     const summaryMessage = Utils.formatUserDailySummary(summary, userName);
                     
+                    // Send DM with @mention for notification
                     await app.client.chat.postMessage({
                         channel: user.id,
-                        text: `🌅 **End of Day Summary**\n\n${summaryMessage}`
+                        text: `🌅 *End of Day Summary*\n\n<@${user.id}> ${summaryMessage}`
                     });
+                    
+                    console.log(`📬 Sent end-of-day notification to ${userName}`);
                 }
             } catch (error) {
                 console.error(`Error sending summary to user ${user.id}:`, error);
@@ -521,8 +590,8 @@ cron.schedule('0 18 * * 1-5', async () => {
     }
 });
 
-// Weekly reminder for pending extra work (Monday 9 AM)
-cron.schedule('0 9 * * 1', async () => {
+// Weekly reminder for pending extra work (Monday 9 AM IST)
+cron.schedule('30 3 * * 1', async () => {
     try {
         console.log('Running weekly reminder...');
         
@@ -535,7 +604,7 @@ cron.schedule('0 9 * * 1', async () => {
                 
                 await app.client.chat.postMessage({
                     channel: user.id,
-                    text: `⚠️ **Weekly Reminder**\n\nYou have ${pendingTime} of pending extra work from ${daysAgo} day(s) ago.\nPlease use \`/work-start\` to log your extra work time.`
+                    text: `⚠️ *Weekly Reminder*\n\nYou have ${pendingTime} of pending extra work from ${daysAgo} day(s) ago.\nPlease use \`/work-start\` to log your extra work time.`
                 });
                 
             } catch (error) {
@@ -562,6 +631,8 @@ cron.schedule('0 9 * * 1', async () => {
         console.log(`  • Transparency channel: ${config.bot.transparencyChannel}`);
         console.log(`  • Admin password set: ${config.bot.adminPassword ? '✅' : '❌'}`);
         console.log(`  • Half-day form: ${config.bot.halfDayFormUrl}`);
+        console.log(`  • Keepalive: ${RENDER_URL ? '✅ Enabled' : '❌ Disabled (add RENDER_URL env var)'}`);
+        console.log(`  • Server running on port: ${process.env.PORT || 3000}`);
         console.log('🚀 Available commands:');
         console.log('  /unplanned <duration> <reason> - Start unplanned leave');
         console.log('  /return - End current leave');

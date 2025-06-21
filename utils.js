@@ -1,4 +1,4 @@
-const moment = require('moment');
+const moment = require('moment-timezone');
 
 class Utils {
     // Parse duration strings like "1.5h", "30m", "2h30m"
@@ -47,7 +47,7 @@ class Utils {
 
     // Calculate return time based on current time and duration
     static calculateReturnTime(durationMinutes) {
-        const now = moment();
+        const now = moment().tz('Asia/Kolkata');
         const returnTime = now.clone().add(durationMinutes, 'minutes');
         return returnTime.format('h:mm A');
     }
@@ -61,17 +61,17 @@ class Utils {
 
     // Get current date in YYYY-MM-DD format
     static getCurrentDate() {
-        return moment().format('YYYY-MM-DD');
+        return moment().tz('Asia/Kolkata').format('YYYY-MM-DD');
     }
 
     // Get current time in ISO format
     static getCurrentTime() {
-        return moment().toISOString();
+        return moment().tz('Asia/Kolkata').toISOString();
     }
 
     // Format time for display
     static formatTime(timestamp) {
-        return moment(timestamp).format('h:mm A');
+        return moment(timestamp).tz('Asia/Kolkata').format('h:mm A');
     }
 
     // Format date for display
@@ -119,7 +119,7 @@ class Utils {
 
     // Generate admin report format
     static formatAdminReport(data, startDate, endDate) {
-        let report = `📈 **ADMIN REPORT** (${startDate} to ${endDate})\n`;
+        let report = `📈 *ADMIN REPORT* (${startDate} to ${endDate})\n`;
         report += `${'='.repeat(50)}\n\n`;
 
         if (data.length === 0) {
@@ -133,13 +133,13 @@ class Utils {
         const totalExtraWorkMinutes = data.reduce((sum, user) => sum + user.total_extra_work_minutes, 0);
         const totalPendingMinutes = data.reduce((sum, user) => sum + user.total_pending_minutes, 0);
 
-        report += `**SUMMARY:**\n`;
+        report += `*SUMMARY:*\n`;
         report += `• Total Users: ${totalUsers}\n`;
         report += `• Total Leave Time: ${this.formatDuration(totalLeaveMinutes)}\n`;
         report += `• Total Extra Work Time: ${this.formatDuration(totalExtraWorkMinutes)}\n`;
         report += `• Total Pending Time: ${this.formatDuration(totalPendingMinutes)}\n\n`;
 
-        report += `**USER DETAILS:**\n`;
+        report += `*USER DETAILS:*\n`;
         report += `${'─'.repeat(80)}\n`;
 
         data.forEach((user, index) => {
@@ -147,13 +147,13 @@ class Utils {
             const extraWorkTime = this.formatDuration(user.total_extra_work_minutes || 0);
             const pendingTime = this.formatDuration(user.total_pending_minutes || 0);
             
-            report += `${index + 1}. **${user.name}**\n`;
+            report += `${index + 1}. *${user.name}*\n`;
             report += `   • Leave Sessions: ${user.total_leave_sessions} (${leaveTime})\n`;
             report += `   • Extra Work Sessions: ${user.total_extra_work_sessions} (${extraWorkTime})\n`;
             report += `   • Pending Work: ${pendingTime}\n`;
             
             if (user.total_pending_minutes > 0) {
-                report += `   ⚠️ **Has pending work**\n`;
+                report += `   ⚠️ *Has pending work*\n`;
             }
             report += `\n`;
         });
@@ -168,7 +168,7 @@ class Utils {
         const pending = this.formatDuration(userData.pending_extra_work_minutes || 0);
         const deadline = this.getDeadlineDate(7); // 7 days from now
 
-        let summary = `📊 **Daily Summary for ${userName}**\n`;
+        let summary = `📊 *Daily Summary for ${userName}*\n`;
         summary += `• Unplanned leave taken: ${leaveTime}\n`;
         summary += `• Extra work completed: ${extraWork}\n`;
         
@@ -177,10 +177,10 @@ class Utils {
             summary += `• Deadline: ${deadline}\n`;
             
             if (this.isDeadlineApproaching(this.getCurrentDate(), 7)) {
-                summary += `⚠️ **Deadline approaching!**`;
+                summary += `⚠️ *Deadline approaching!*`;
             }
         } else {
-            summary += `✅ **All caught up!**`;
+            summary += `✅ *All caught up!*`;
         }
 
         return summary;

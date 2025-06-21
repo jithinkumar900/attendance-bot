@@ -30,6 +30,7 @@ NOTIFY_CHANNELS=#hr-notifications,#management
 DATABASE_PATH=./attendance.db
 PORT=10000
 NODE_ENV=production
+RENDER_URL=https://your-app-name.onrender.com
 ```
 
 ---
