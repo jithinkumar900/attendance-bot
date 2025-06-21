@@ -26,7 +26,7 @@
       "return": "Use: `/return` to end your current leave",
       "workStart": "Use: `/work-start` to begin extra work session",
       "workEnd": "Use: `/work-end` to finish extra work",
-      "status": "Use: `/status` to check your current balance"
+      "review": "Use: `/review` to check your current balance"
     }
   }
 } 

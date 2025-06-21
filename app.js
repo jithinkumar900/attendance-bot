@@ -284,7 +284,7 @@ app.command('/work-end', async ({ command, ack, say }) => {
 });
 
 // Check leave balance
-app.command('/status', async ({ command, ack, say, client }) => {
+app.command('/review', async ({ command, ack, say, client }) => {
     await ack();
     
     try {
@@ -312,7 +312,7 @@ app.command('/status', async ({ command, ack, say, client }) => {
         });
 
     } catch (error) {
-        console.error('Error in status:', error);
+        console.error('Error in review:', error);
         await say({
             text: "Sorry, there was an error retrieving your balance. Please try again.",
             response_type: 'ephemeral'
@@ -567,7 +567,7 @@ cron.schedule('0 9 * * 1', async () => {
         console.log('  /return - End current leave');
         console.log('  /work-start [reason] - Start extra work session');
         console.log('  /work-end - End extra work session');
-        console.log('  /status - Check today\'s summary');
+        console.log('  /review - Check today\'s summary');
         console.log('  /admin <password> - Admin report');
         
     } catch (error) {

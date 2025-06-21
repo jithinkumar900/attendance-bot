@@ -129,28 +129,28 @@ class Utils {
 
         // Summary statistics
         const totalUsers = data.length;
-        const totalLeaveHours = data.reduce((sum, user) => sum + user.total_leave_minutes, 0) / 60;
-        const totalExtraWorkHours = data.reduce((sum, user) => sum + user.total_extra_work_minutes, 0) / 60;
-        const totalPendingHours = data.reduce((sum, user) => sum + user.total_pending_minutes, 0) / 60;
+        const totalLeaveMinutes = data.reduce((sum, user) => sum + user.total_leave_minutes, 0);
+        const totalExtraWorkMinutes = data.reduce((sum, user) => sum + user.total_extra_work_minutes, 0);
+        const totalPendingMinutes = data.reduce((sum, user) => sum + user.total_pending_minutes, 0);
 
         report += `**SUMMARY:**\n`;
         report += `• Total Users: ${totalUsers}\n`;
-        report += `• Total Leave Hours: ${totalLeaveHours.toFixed(1)}h\n`;
-        report += `• Total Extra Work Hours: ${totalExtraWorkHours.toFixed(1)}h\n`;
-        report += `• Total Pending Hours: ${totalPendingHours.toFixed(1)}h\n\n`;
+        report += `• Total Leave Time: ${this.formatDuration(totalLeaveMinutes)}\n`;
+        report += `• Total Extra Work Time: ${this.formatDuration(totalExtraWorkMinutes)}\n`;
+        report += `• Total Pending Time: ${this.formatDuration(totalPendingMinutes)}\n\n`;
 
         report += `**USER DETAILS:**\n`;
         report += `${'─'.repeat(80)}\n`;
 
         data.forEach((user, index) => {
-            const leaveHours = (user.total_leave_minutes / 60).toFixed(1);
-            const extraWorkHours = (user.total_extra_work_minutes / 60).toFixed(1);
-            const pendingHours = (user.total_pending_minutes / 60).toFixed(1);
+            const leaveTime = this.formatDuration(user.total_leave_minutes || 0);
+            const extraWorkTime = this.formatDuration(user.total_extra_work_minutes || 0);
+            const pendingTime = this.formatDuration(user.total_pending_minutes || 0);
             
             report += `${index + 1}. **${user.name}**\n`;
-            report += `   • Leave Sessions: ${user.total_leave_sessions} (${leaveHours}h)\n`;
-            report += `   • Extra Work Sessions: ${user.total_extra_work_sessions} (${extraWorkHours}h)\n`;
-            report += `   • Pending Work: ${pendingHours}h\n`;
+            report += `   • Leave Sessions: ${user.total_leave_sessions} (${leaveTime})\n`;
+            report += `   • Extra Work Sessions: ${user.total_extra_work_sessions} (${extraWorkTime})\n`;
+            report += `   • Pending Work: ${pendingTime}\n`;
             
             if (user.total_pending_minutes > 0) {
                 report += `   ⚠️ **Has pending work**\n`;
@@ -188,12 +188,12 @@ class Utils {
 
     // Create leave transparency message
     static formatLeaveTransparencyMessage(userName, duration, reason, returnTime) {
-        return `🏃‍♂️ **${userName}** is on unplanned leave for **${duration}** (${reason}) - back by **${returnTime}**`;
+        return `🏃‍♂️ *${userName}* is on unplanned leave for *${duration}* (${reason}) - back by *${returnTime}*`;
     }
 
     // Create leave end message
     static formatLeaveEndMessage(userName, actualDuration) {
-        return `✅ **${userName}** returned from leave (actual time: **${actualDuration}**)`;
+        return `✅ *${userName}* returned from leave (actual time: *${actualDuration}*)`;
     }
 
     // Create half-day trigger message

@@ -66,7 +66,7 @@ cp .env.example .env
    - `/return`
    - `/work-start`
    - `/work-end`
-   - `/status`
+   - `/review`
    - `/admin`
 
 ### 4. Configuration
@@ -129,7 +129,7 @@ npm start
 
 #### Check Balance
 ```
-/status
+/review
 ```
 
 ### For Admins
