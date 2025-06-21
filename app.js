@@ -100,99 +100,125 @@ if (RENDER_URL) {
 // SLASH COMMANDS
 // ================================
 
-// Start unplanned leave
-app.command('/unplanned', async ({ command, ack, say, client }) => {
+// Start unplanned leave - Interactive Modal
+app.command('/unplanned', async ({ command, ack, client }) => {
     await ack();
     
     try {
-        const { user_id, text, channel_id } = command;
-        
-        if (!text.trim()) {
-            await say({
-                text: "Please provide duration and reason. Example: `/unplanned 1.5h doctor appointment`",
-                response_type: 'ephemeral'
-            });
-            return;
-        }
-
-        // Parse the input
-        const parts = text.trim().split(' ');
-        const durationStr = parts[0];
-        const reason = parts.slice(1).join(' ');
-
-        if (!reason) {
-            await say({
-                text: "Please provide a reason. Example: `/unplanned 1.5h doctor appointment`",
-                response_type: 'ephemeral'
-            });
-            return;
-        }
-
-        // Validate duration
-        if (!Utils.isValidDuration(durationStr)) {
-            await say({
-                text: "Invalid duration format. Use formats like: 1h, 1.5h, 30m, 1h30m",
-                response_type: 'ephemeral'
-            });
-            return;
-        }
+        const { user_id, trigger_id } = command;
 
         // Check if user already has an active leave session
         const activeSession = await db.getUserActiveLeaveSession(user_id);
         if (activeSession) {
-            await say({
-                text: `You already have an active leave session. Use \`/return\` first.`,
-                response_type: 'ephemeral'
+            await client.views.open({
+                trigger_id,
+                view: {
+                    type: 'modal',
+                    callback_id: 'leave_error_modal',
+                    title: { type: 'plain_text', text: 'Already on Leave' },
+                    close: { type: 'plain_text', text: 'Close' },
+                    blocks: [
+                        {
+                            type: 'section',
+                            text: {
+                                type: 'mrkdwn',
+                                text: '⚠️ *You already have an active leave session.*\n\nPlease use `/return` first to end your current session before starting a new one.'
+                            }
+                        }
+                    ]
+                }
             });
             return;
         }
 
-        // Get user info
-        const userInfo = await client.users.info({ user: user_id });
-        const userName = userInfo.user.real_name || userInfo.user.name;
-
-        // Create user in database if not exists
-        await db.createUser(user_id, userName, userInfo.user.profile.email);
-
-        // Parse duration and calculate return time
-        const durationMinutes = Utils.parseDuration(durationStr);
-        const returnTime = Utils.calculateReturnTime(durationMinutes);
-        const formattedDuration = Utils.formatDuration(durationMinutes);
-
-        // Start leave session
-        await db.startLeaveSession(user_id, durationMinutes, reason);
-
-        // Send transparency message to the configured channel
-        const message = Utils.formatLeaveTransparencyMessage(userName, formattedDuration, reason, returnTime);
-        
-        await client.chat.postMessage({
-            channel: config.bot.transparencyChannel,
-            text: message
-        });
-
-        // Confirm to user
-        await say({
-            text: `✅ Leave started! Duration: ${formattedDuration}. Expected return: ${returnTime}`,
-            response_type: 'ephemeral'
-        });
-
-        // Notify configured users/channels
-        for (const user of config.notifications.notifyUsers) {
-            try {
-                await client.chat.postMessage({
-                    channel: user,
-                    text: `📋 *Leave Notification*\n${message}`
-                });
-            } catch (error) {
-                console.error(`Failed to notify ${user}:`, error);
+        // Open interactive modal
+        await client.views.open({
+            trigger_id,
+            view: {
+                type: 'modal',
+                callback_id: 'unplanned_leave_modal',
+                title: { type: 'plain_text', text: 'Start Unplanned Leave' },
+                submit: { type: 'plain_text', text: 'Start Leave' },
+                close: { type: 'plain_text', text: 'Cancel' },
+                blocks: [
+                    {
+                        type: 'section',
+                        text: {
+                            type: 'mrkdwn',
+                            text: '⏰ *How long will you be away?*\n\nSelect your expected leave duration:'
+                        }
+                    },
+                    {
+                        type: 'input',
+                        block_id: 'leave_hours',
+                        element: {
+                            type: 'static_select',
+                            placeholder: { type: 'plain_text', text: 'Select hours' },
+                            action_id: 'hours_select',
+                            options: [
+                                { text: { type: 'plain_text', text: '0 hours' }, value: '0' },
+                                { text: { type: 'plain_text', text: '1 hour' }, value: '1' },
+                                { text: { type: 'plain_text', text: '2 hours' }, value: '2' },
+                                { text: { type: 'plain_text', text: '3 hours' }, value: '3' },
+                                { text: { type: 'plain_text', text: '4 hours' }, value: '4' },
+                                { text: { type: 'plain_text', text: '5 hours' }, value: '5' },
+                                { text: { type: 'plain_text', text: '6 hours' }, value: '6' },
+                                { text: { type: 'plain_text', text: '7 hours' }, value: '7' },
+                                { text: { type: 'plain_text', text: '8 hours' }, value: '8' }
+                            ],
+                            initial_option: { text: { type: 'plain_text', text: '0 hours' }, value: '0' }
+                        },
+                        label: { type: 'plain_text', text: '🕐 Hours' }
+                    },
+                    {
+                        type: 'input',
+                        block_id: 'leave_minutes',
+                        element: {
+                            type: 'static_select',
+                            placeholder: { type: 'plain_text', text: 'Select minutes' },
+                            action_id: 'minutes_select',
+                            options: [
+                                { text: { type: 'plain_text', text: '0 minutes' }, value: '0' },
+                                { text: { type: 'plain_text', text: '15 minutes' }, value: '15' },
+                                { text: { type: 'plain_text', text: '30 minutes' }, value: '30' },
+                                { text: { type: 'plain_text', text: '45 minutes' }, value: '45' }
+                            ],
+                            initial_option: { text: { type: 'plain_text', text: '15 minutes' }, value: '15' }
+                        },
+                        label: { type: 'plain_text', text: '⏰ Minutes' }
+                    },
+                    {
+                        type: 'input',
+                        block_id: 'leave_reason',
+                        optional: true,
+                        element: {
+                            type: 'plain_text_input',
+                            action_id: 'reason_input',
+                            placeholder: { type: 'plain_text', text: 'Optional: Quick coffee, Doctor visit, etc.' },
+                            max_length: 100
+                        },
+                        label: { type: 'plain_text', text: '📝 Reason (optional)' }
+                    },
+                    {
+                        type: 'context',
+                        elements: [
+                            {
+                                type: 'mrkdwn',
+                                text: '💡 *This will be posted to #unplanned-leave for transparency*'
+                            }
+                        ]
+                    }
+                ]
             }
-        }
+        });
 
     } catch (error) {
-        console.error('Error in unplanned:', error);
-        await say({
-            text: "Sorry, there was an error starting your leave session. Please try again.",
-            response_type: 'ephemeral'
+        console.error('Error in unplanned modal:', error);
+        // Fallback to simple message
+        await client.chat.postEphemeral({
+            channel: command.channel_id,
+            user: command.user_id,
+            text: "Sorry, there was an error opening the leave form. Please try again."
         });
     }
 });
@@ -221,7 +247,7 @@ app.command('/return', async ({ command, ack, say, client }) => {
             // Send DM about time exceeded
             await client.chat.postMessage({
                 channel: user_id,
-                text: `⚠️ *Time Exceeded Alert*\n\nYou planned to be away for *${plannedDuration}* but were actually away for *${actualDuration}*.\nExceeded by: *${exceededBy}*\n\nNext time, please use \`/return\` in ${config.bot.transparencyChannel} when you return to update everyone!`
+                text: `😊 *Time Summary*\n\nHi! You planned to be away for *${plannedDuration}* but were actually away for *${actualDuration}*.\nExtra time taken: *${exceededBy}*\n\n🔄 *Next Steps:*\n1. Use \`/work-start\` to begin ${exceededBy} of extra work\n2. I'll help track your progress and auto-complete when done!\n\nThanks for being transparent! 🙏`
             });
         }
 
@@ -294,9 +320,10 @@ app.command('/work-start', async ({ command, ack, say, client }) => {
         // Start extra work session
         await db.startExtraWorkSession(user_id, text);
 
-        await say({
-            text: `⏰ Extra work session started! You'll be prompted every hour.`,
-            response_type: 'ephemeral'
+        // Send DM to user about extra work start
+        await client.chat.postMessage({
+            channel: user_id,
+            text: `⏰ *Extra work session started!*\n\nI'll check on you every hour and auto-complete when you've worked enough time. Good luck! 💪`
         });
 
         // Schedule hourly prompts
@@ -332,9 +359,10 @@ app.command('/work-end', async ({ command, ack, say }) => {
             activePrompts.delete(user_id);
         }
 
-        await say({
-            text: `✅ Extra work session ended! Duration: ${duration}`,
-            response_type: 'ephemeral'
+        // Send DM to user about extra work end
+        await client.chat.postMessage({
+            channel: user_id,
+            text: `✅ *Extra work session completed!*\n\nDuration: ${duration}\nGreat job! 🎉`
         });
 
     } catch (error) {
@@ -422,8 +450,8 @@ app.command('/review', async ({ command, ack, say, client }) => {
     }
 });
 
-// Admin command
-app.command('/admin', async ({ command, ack, say }) => {
+// Admin command - Interactive Dashboard
+app.command('/admin', async ({ command, ack, say, client }) => {
     await ack();
     
     try {
@@ -437,24 +465,20 @@ app.command('/admin', async ({ command, ack, say }) => {
             return;
         }
 
-        // Generate report for the last 30 days
-        const endDate = Utils.getCurrentDate();
-        const startDate = new Date();
-        startDate.setDate(startDate.getDate() - 30);
-        const startDateStr = startDate.toISOString().split('T')[0];
-
-        const reportData = await db.getAdminReport(startDateStr, endDate);
-        const report = Utils.formatAdminReport(reportData, startDateStr, endDate);
+        // Get live status data
+        const liveStatus = await getLiveAdminStatus();
+        const dashboardMessage = Utils.formatAdminDashboard(liveStatus);
 
         await say({
-            text: report,
+            text: dashboardMessage.text,
+            blocks: dashboardMessage.blocks,
             response_type: 'ephemeral'
         });
 
     } catch (error) {
         console.error('Error in admin command:', error);
         await say({
-            text: "Sorry, there was an error generating the admin report. Please try again.",
+            text: "Sorry, there was an error loading the admin dashboard. Please try again.",
             response_type: 'ephemeral'
         });
     }
@@ -477,6 +501,38 @@ function scheduleExtraWorkPrompts(userId, client) {
             const startTime = new Date(activeSession.start_time);
             const currentDuration = Utils.calculateActualDuration(activeSession.start_time, new Date());
             const formattedDuration = Utils.formatDuration(currentDuration);
+
+            // Check if enough work has been completed (get today's pending work)
+            const today = Utils.getCurrentDate();
+            const summary = await db.getUserDailySummary(userId, today);
+            
+            if (summary && currentDuration >= summary.pending_extra_work_minutes) {
+                // Auto-complete the work session
+                try {
+                    const session = await db.endExtraWorkSession(userId);
+                    const duration = Utils.formatDuration(session.duration);
+
+                    // Update daily summary
+                    await db.updateDailySummary(userId, today);
+
+                    // Clear prompts
+                    if (activePrompts.has(userId)) {
+                        clearTimeout(activePrompts.get(userId));
+                        activePrompts.delete(userId);
+                    }
+
+                    // Send completion message
+                    await client.chat.postMessage({
+                        channel: userId,
+                        text: `🎉 *Extra Work Completed!*\n\nAwesome! You've worked for ${duration} which covers your pending time.\nYour extra work session has been automatically completed.\n\nGreat job staying committed! 💪✨`
+                    });
+
+                    console.log(`✅ Auto-completed extra work for user ${userId} - worked ${duration}`);
+                    return;
+                } catch (error) {
+                    console.error('Error auto-completing extra work:', error);
+                }
+            }
 
             const message = Utils.formatExtraWorkPrompt(formattedDuration);
 
@@ -535,8 +591,645 @@ function scheduleExtraWorkPrompts(userId, client) {
 }
 
 // ================================
+// ADMIN HELPER FUNCTIONS
+// ================================
+
+async function getLiveAdminStatus() {
+    try {
+        // Get all active leave sessions
+        const activeLeave = await new Promise((resolve, reject) => {
+            db.db.all(
+                `SELECT ls.*, u.name as user_name FROM leave_sessions ls
+                JOIN users u ON ls.user_id = u.id
+                WHERE ls.end_time IS NULL 
+                ORDER BY ls.start_time DESC`,
+                (err, sessions) => {
+                    if (err) reject(err);
+                    else resolve(sessions || []);
+                }
+            );
+        });
+
+        // Get all active extra work sessions
+        const activeExtraWork = await new Promise((resolve, reject) => {
+            db.db.all(
+                `SELECT ews.*, u.name as user_name FROM extra_work_sessions ews
+                JOIN users u ON ews.user_id = u.id
+                WHERE ews.end_time IS NULL 
+                ORDER BY ews.start_time DESC`,
+                (err, sessions) => {
+                    if (err) reject(err);
+                    else resolve(sessions || []);
+                }
+            );
+        });
+
+        // Get users with pending work
+        const pendingWork = await new Promise((resolve, reject) => {
+            db.db.all(
+                `SELECT ds.*, u.name as user_name FROM daily_summaries ds
+                JOIN users u ON ds.user_id = u.id
+                WHERE ds.pending_extra_work_minutes > 0 
+                ORDER BY ds.date DESC, ds.pending_extra_work_minutes DESC`,
+                (err, sessions) => {
+                    if (err) reject(err);
+                    else resolve(sessions || []);
+                }
+            );
+        });
+
+        // Get recent activity (last 24 hours)
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+        const recentActivity = await db.getAdminReport(yesterdayStr, Utils.getCurrentDate());
+
+        return {
+            activeLeave,
+            activeExtraWork,
+            pendingWork,
+            recentActivity
+        };
+    } catch (error) {
+        console.error('Error getting live admin status:', error);
+        return {
+            activeLeave: [],
+            activeExtraWork: [],
+            pendingWork: [],
+            recentActivity: []
+        };
+    }
+}
+
+// ================================
 // BUTTON INTERACTIONS
 // ================================
+
+// Admin Dashboard Actions
+app.action('admin_live_status', async ({ body, ack, respond }) => {
+    await ack();
+    try {
+        const liveStatus = await getLiveAdminStatus();
+        const statusMessage = Utils.formatLiveStatus(liveStatus);
+        await respond({
+            text: statusMessage.text,
+            blocks: statusMessage.blocks,
+            replace_original: false,
+            response_type: 'ephemeral'
+        });
+    } catch (error) {
+        console.error('Error in admin live status:', error);
+        await respond({ text: "Error loading live status.", response_type: 'ephemeral' });
+    }
+});
+
+app.action('admin_reports', async ({ body, ack, respond }) => {
+    await ack();
+    try {
+        await respond({
+            text: "📊 Select Report Type",
+            blocks: Utils.getReportsMenu(),
+            replace_original: false,
+            response_type: 'ephemeral'
+        });
+    } catch (error) {
+        console.error('Error in admin reports:', error);
+        await respond({ text: "Error loading reports menu.", response_type: 'ephemeral' });
+    }
+});
+
+app.action('admin_users', async ({ body, ack, respond }) => {
+    await ack();
+    try {
+        const users = await new Promise((resolve, reject) => {
+            db.db.all(
+                `SELECT u.*, 
+                COUNT(DISTINCT ls.id) as total_sessions,
+                COALESCE(SUM(ds.pending_extra_work_minutes), 0) as total_pending
+                FROM users u
+                LEFT JOIN leave_sessions ls ON u.id = ls.user_id
+                LEFT JOIN daily_summaries ds ON u.id = ds.user_id
+                GROUP BY u.id
+                ORDER BY total_pending DESC, total_sessions DESC`,
+                (err, results) => {
+                    if (err) reject(err);
+                    else resolve(results || []);
+                }
+            );
+        });
+        
+        const usersMessage = Utils.formatUsersManagement(users);
+        await respond({
+            text: usersMessage.text,
+            blocks: usersMessage.blocks,
+            replace_original: false,
+            response_type: 'ephemeral'
+        });
+    } catch (error) {
+        console.error('Error in admin users:', error);
+        await respond({ text: "Error loading users.", response_type: 'ephemeral' });
+    }
+});
+
+app.action('admin_analytics', async ({ body, ack, respond }) => {
+    await ack();
+    try {
+        const analytics = await getAnalyticsData();
+        const analyticsMessage = Utils.formatAnalytics(analytics);
+        await respond({
+            text: analyticsMessage.text,
+            blocks: analyticsMessage.blocks,
+            replace_original: false,
+            response_type: 'ephemeral'
+        });
+    } catch (error) {
+        console.error('Error in admin analytics:', error);
+        await respond({ text: "Error loading analytics.", response_type: 'ephemeral' });
+    }
+});
+
+app.action('admin_actions', async ({ body, ack, respond }) => {
+    await ack();
+    try {
+        await respond({
+            text: "⚡ Admin Actions",
+            blocks: Utils.getAdminActionsMenu(),
+            replace_original: false,
+            response_type: 'ephemeral'
+        });
+    } catch (error) {
+        console.error('Error in admin actions:', error);
+        await respond({ text: "Error loading actions menu.", response_type: 'ephemeral' });
+    }
+});
+
+// Report Actions
+app.action('report_weekly', async ({ body, ack, respond }) => {
+    await ack();
+    try {
+        const endDate = Utils.getCurrentDate();
+        const startDate = new Date();
+        startDate.setDate(startDate.getDate() - 7);
+        const startDateStr = startDate.toISOString().split('T')[0];
+        
+        const reportData = await db.getAdminReport(startDateStr, endDate);
+        const report = Utils.formatAdminReport(reportData, startDateStr, endDate);
+        
+        await respond({
+            text: report,
+            replace_original: false,
+            response_type: 'ephemeral'
+        });
+    } catch (error) {
+        console.error('Error in weekly report:', error);
+        await respond({ text: "Error generating weekly report.", response_type: 'ephemeral' });
+    }
+});
+
+app.action('report_monthly', async ({ body, ack, respond }) => {
+    await ack();
+    try {
+        const endDate = Utils.getCurrentDate();
+        const startDate = new Date();
+        startDate.setDate(startDate.getDate() - 30);
+        const startDateStr = startDate.toISOString().split('T')[0];
+        
+        const reportData = await db.getAdminReport(startDateStr, endDate);
+        const report = Utils.formatAdminReport(reportData, startDateStr, endDate);
+        
+        await respond({
+            text: report,
+            replace_original: false,
+            response_type: 'ephemeral'
+        });
+    } catch (error) {
+        console.error('Error in monthly report:', error);
+        await respond({ text: "Error generating monthly report.", response_type: 'ephemeral' });
+    }
+});
+
+// Admin Action Handlers
+app.action('action_send_reminders', async ({ body, ack, respond }) => {
+    await ack();
+    try {
+        const pendingUsers = await new Promise((resolve, reject) => {
+            db.db.all(
+                `SELECT DISTINCT ds.user_id, u.name, SUM(ds.pending_extra_work_minutes) as total_pending
+                FROM daily_summaries ds
+                JOIN users u ON ds.user_id = u.id
+                WHERE ds.pending_extra_work_minutes > 0
+                GROUP BY ds.user_id
+                ORDER BY total_pending DESC`,
+                (err, results) => {
+                    if (err) reject(err);
+                    else resolve(results || []);
+                }
+            );
+        });
+
+        let sentCount = 0;
+        for (const user of pendingUsers) {
+            try {
+                const pendingTime = Utils.formatDuration(user.total_pending);
+                await app.client.chat.postMessage({
+                    channel: user.user_id,
+                    text: `👋 *Friendly Reminder*\n\nHi ${user.name}! You have ${pendingTime} of pending extra work.\n\n🔄 Use \`/work-start\` when you're ready to complete it.\n\nThanks for staying on top of things! 🙏`
+                });
+                sentCount++;
+            } catch (error) {
+                console.error(`Error sending reminder to ${user.name}:`, error);
+            }
+        }
+
+        await respond({
+            text: `✅ Sent reminders to ${sentCount} user(s) with pending work.`,
+            replace_original: false,
+            response_type: 'ephemeral'
+        });
+    } catch (error) {
+        console.error('Error sending reminders:', error);
+        await respond({ text: "Error sending reminders.", response_type: 'ephemeral' });
+    }
+});
+
+app.action('action_reset_pending', async ({ body, ack, respond }) => {
+    await ack();
+    try {
+        await respond({
+            text: "🔄 *Reset Pending Work*\n\nSelect users to reset their pending work:",
+            blocks: await getUserResetMenu(),
+            replace_original: false,
+            response_type: 'ephemeral'
+        });
+    } catch (error) {
+        console.error('Error loading reset menu:', error);
+        await respond({ text: "Error loading reset menu.", response_type: 'ephemeral' });
+    }
+});
+
+app.action('action_approve_time', async ({ body, ack, respond }) => {
+    await ack();
+    try {
+        await respond({
+            text: "✅ *Approve Exceeded Time*\n\nSelect sessions to approve:",
+            blocks: await getApprovalMenu(),
+            replace_original: false,
+            response_type: 'ephemeral'
+        });
+    } catch (error) {
+        console.error('Error loading approval menu:', error);
+        await respond({ text: "Error loading approval menu.", response_type: 'ephemeral' });
+    }
+});
+
+// Reset user pending work
+app.action(/^reset_user_(.+)$/, async ({ body, ack, respond, action }) => {
+    await ack();
+    try {
+        const userId = action.action_id.replace('reset_user_', '');
+        
+        // Reset all pending work for this user
+        await new Promise((resolve, reject) => {
+            db.db.run(
+                `UPDATE daily_summaries 
+                SET pending_extra_work_minutes = 0,
+                    updated_at = ?
+                WHERE user_id = ? AND pending_extra_work_minutes > 0`,
+                [new Date().toISOString(), userId],
+                function(err) {
+                    if (err) reject(err);
+                    else resolve(this.changes);
+                }
+            );
+        });
+
+        const userInfo = await app.client.users.info({ user: userId });
+        const userName = userInfo.user.real_name || userInfo.user.name;
+
+        await respond({
+            text: `✅ Reset pending work for *${userName}*`,
+            replace_original: false,
+            response_type: 'ephemeral'
+        });
+
+        // Notify the user
+        await app.client.chat.postMessage({
+            channel: userId,
+            text: `✅ *Good News!*\n\nYour pending extra work has been cleared by an admin.\nThanks for your efforts! 🎉`
+        });
+
+    } catch (error) {
+        console.error('Error resetting pending work:', error);
+        await respond({ text: "Error resetting pending work.", response_type: 'ephemeral' });
+    }
+});
+
+async function getUserResetMenu() {
+    const pendingUsers = await new Promise((resolve, reject) => {
+        db.db.all(
+            `SELECT DISTINCT ds.user_id, u.name, SUM(ds.pending_extra_work_minutes) as total_pending
+            FROM daily_summaries ds
+            JOIN users u ON ds.user_id = u.id
+            WHERE ds.pending_extra_work_minutes > 0
+            GROUP BY ds.user_id
+            ORDER BY total_pending DESC
+            LIMIT 10`,
+            (err, results) => {
+                if (err) reject(err);
+                else resolve(results || []);
+            }
+        );
+    });
+
+    if (pendingUsers.length === 0) {
+        return [
+            {
+                type: "section",
+                text: {
+                    type: "mrkdwn",
+                    text: "✅ No users with pending work found."
+                }
+            }
+        ];
+    }
+
+    const userButtons = pendingUsers.map(user => ({
+        type: "button",
+        text: { 
+            type: "plain_text", 
+            text: `🔄 ${user.name} (${Utils.formatDuration(user.total_pending)})` 
+        },
+        action_id: `reset_user_${user.user_id}`,
+        style: "danger"
+    }));
+
+    // Split into groups of 5 (Slack limit)
+    const buttonGroups = [];
+    for (let i = 0; i < userButtons.length; i += 5) {
+        buttonGroups.push({
+            type: "actions",
+            elements: userButtons.slice(i, i + 5)
+        });
+    }
+
+    return [
+        {
+            type: "section",
+            text: {
+                type: "mrkdwn",
+                text: "Select a user to reset their pending work:"
+            }
+        },
+        ...buttonGroups
+    ];
+}
+
+async function getApprovalMenu() {
+    // Get recent exceeded sessions
+    const exceededSessions = await new Promise((resolve, reject) => {
+        db.db.all(
+            `SELECT ls.*, u.name as user_name 
+            FROM leave_sessions ls
+            JOIN users u ON ls.user_id = u.id
+            WHERE ls.actual_duration > ls.planned_duration
+            AND ls.end_time IS NOT NULL
+            AND DATE(ls.start_time) >= DATE('now', '-7 days')
+            ORDER BY ls.start_time DESC
+            LIMIT 10`,
+            (err, results) => {
+                if (err) reject(err);
+                else resolve(results || []);
+            }
+        );
+    });
+
+    if (exceededSessions.length === 0) {
+        return [
+            {
+                type: "section",
+                text: {
+                    type: "mrkdwn",
+                    text: "✅ No recent exceeded sessions found."
+                }
+            }
+        ];
+    }
+
+    let text = "Recent sessions that exceeded planned time:\n\n";
+    exceededSessions.forEach((session, index) => {
+        const date = Utils.formatDate(session.date);
+        const planned = Utils.formatDuration(session.planned_duration);
+        const actual = Utils.formatDuration(session.actual_duration);
+        const exceeded = Utils.formatDuration(session.actual_duration - session.planned_duration);
+        
+        text += `${index + 1}. *${session.user_name}* (${date})\n`;
+        text += `   Planned: ${planned}, Actual: ${actual}, Exceeded: ${exceeded}\n`;
+        text += `   Reason: ${session.reason}\n\n`;
+    });
+
+    return [
+        {
+            type: "section",
+            text: {
+                type: "mrkdwn",
+                text
+            }
+        }
+    ];
+}
+
+// Handle unplanned leave modal submission
+app.view('unplanned_leave_modal', async ({ ack, body, client, view }) => {
+    await ack();
+    
+    try {
+        const user_id = body.user.id;
+        
+        // Extract values from the modal
+        const values = view.state.values;
+        
+        // Get hours and minutes from the selects
+        const hours = parseInt(values.leave_hours?.hours_select?.selected_option?.value || '0');
+        const minutes = parseInt(values.leave_minutes?.minutes_select?.selected_option?.value || '0');
+        
+        // Get reason (optional)
+        const reason = values.leave_reason?.reason_input?.value?.trim() || 'Unplanned leave';
+        
+        // Calculate total duration in minutes
+        const durationMinutes = (hours * 60) + minutes;
+        
+        // Validate duration
+        if (durationMinutes === 0) {
+            // Show error - can't have 0 duration
+            return {
+                response_action: 'errors',
+                errors: {
+                    leave_hours: 'Please select at least 15 minutes',
+                    leave_minutes: 'Please select at least 15 minutes'
+                }
+            };
+        }
+        
+        if (durationMinutes > 480) { // 8 hours max
+            return {
+                response_action: 'errors',
+                errors: {
+                    leave_hours: 'Maximum 8 hours allowed'
+                }
+            };
+        }
+        
+        // Get user info
+        const userInfo = await client.users.info({ user: user_id });
+        const userName = userInfo.user.real_name || userInfo.user.name;
+        
+        // Create user in database if not exists
+        await db.createUser(user_id, userName, userInfo.user.profile?.email);
+        
+        // Calculate return time
+        const returnTime = Utils.calculateReturnTime(durationMinutes);
+        const formattedDuration = Utils.formatDuration(durationMinutes);
+        
+        // Start leave session
+        await db.startLeaveSession(user_id, durationMinutes, reason);
+        
+        // Send transparency message to the configured channel
+        const message = Utils.formatLeaveTransparencyMessage(userName, formattedDuration, reason, returnTime);
+        
+        await client.chat.postMessage({
+            channel: config.bot.transparencyChannel,
+            text: message
+        });
+        
+        // Send success message to user
+        await client.chat.postEphemeral({
+            channel: config.bot.transparencyChannel,
+            user: user_id,
+            text: `✅ *Leave started successfully!*\n\n⏰ Duration: ${formattedDuration}\n🕐 Expected return: ${returnTime}\n📝 Reason: ${reason}\n\nPosted to ${config.bot.transparencyChannel} for transparency. 👍`
+        });
+        
+        // Notify configured users/channels
+        for (const user of config.notifications.notifyUsers) {
+            try {
+                await client.chat.postMessage({
+                    channel: user,
+                    text: `📋 *Leave Notification*\n${message}`
+                });
+            } catch (error) {
+                console.error(`Failed to notify ${user}:`, error);
+            }
+        }
+        
+    } catch (error) {
+        console.error('Error processing leave modal:', error);
+        
+        // Send error message to user
+        await client.chat.postEphemeral({
+            channel: config.bot.transparencyChannel,
+            user: body.user.id,
+            text: "❌ Sorry, there was an error starting your leave session. Please try again."
+        });
+    }
+});
+
+// User drill-down actions
+app.action(/^user_details_(.+)$/, async ({ body, ack, respond, action }) => {
+    await ack();
+    try {
+        const userId = action.action_id.replace('user_details_', '');
+        const userDetails = await getUserDetailedInfo(userId);
+        const detailsMessage = Utils.formatUserDetails(userDetails);
+        
+        await respond({
+            text: detailsMessage.text,
+            blocks: detailsMessage.blocks,
+            replace_original: false,
+            response_type: 'ephemeral'
+        });
+    } catch (error) {
+        console.error('Error getting user details:', error);
+        await respond({ text: "Error loading user details.", response_type: 'ephemeral' });
+    }
+});
+
+async function getAnalyticsData() {
+    // Get data for the last 30 days
+    const endDate = Utils.getCurrentDate();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - 30);
+    const startDateStr = startDate.toISOString().split('T')[0];
+
+    const analytics = await new Promise((resolve, reject) => {
+        db.db.all(
+            `SELECT 
+                DATE(ls.start_time) as date,
+                COUNT(*) as daily_sessions,
+                AVG(ls.actual_duration) as avg_duration,
+                MAX(ls.actual_duration) as max_duration,
+                COUNT(CASE WHEN ls.actual_duration > ls.planned_duration THEN 1 END) as exceeded_sessions
+            FROM leave_sessions ls
+            WHERE ls.date BETWEEN ? AND ?
+            AND ls.end_time IS NOT NULL
+            GROUP BY DATE(ls.start_time)
+            ORDER BY date DESC`,
+            [startDateStr, endDate],
+            (err, results) => {
+                if (err) reject(err);
+                else resolve(results || []);
+            }
+        );
+    });
+
+    return analytics;
+}
+
+async function getUserDetailedInfo(userId) {
+    const userInfo = await new Promise((resolve, reject) => {
+        db.db.get(
+            `SELECT * FROM users WHERE id = ?`,
+            [userId],
+            (err, result) => {
+                if (err) reject(err);
+                else resolve(result);
+            }
+        );
+    });
+
+    const recentSessions = await new Promise((resolve, reject) => {
+        db.db.all(
+            `SELECT * FROM leave_sessions 
+            WHERE user_id = ? 
+            ORDER BY start_time DESC 
+            LIMIT 10`,
+            [userId],
+            (err, results) => {
+                if (err) reject(err);
+                else resolve(results || []);
+            }
+        );
+    });
+
+    const summaries = await new Promise((resolve, reject) => {
+        db.db.all(
+            `SELECT * FROM daily_summaries 
+            WHERE user_id = ? 
+            ORDER BY date DESC 
+            LIMIT 7`,
+            [userId],
+            (err, results) => {
+                if (err) reject(err);
+                else resolve(results || []);
+            }
+        );
+    });
+
+    return {
+        user: userInfo,
+        recentSessions,
+        summaries
+    };
+}
 
 // Handle extra work continue button
 app.action('extra_work_continue', async ({ body, ack, say }) => {
@@ -590,8 +1283,8 @@ app.action('extra_work_stop', async ({ body, ack, say }) => {
 // AUTOMATIC TIME EXCEEDED CHECKS
 // ================================
 
-// Check for exceeded leave times every minute
-cron.schedule('* * * * *', async () => {
+// Check for exceeded leave times every 30 minutes
+cron.schedule('*/30 * * * *', async () => {
     try {
         // Get all active leave sessions
         const activeSession = await new Promise((resolve, reject) => {
@@ -617,7 +1310,7 @@ cron.schedule('* * * * *', async () => {
                 // Send DM notification about time exceeded
                 await app.client.chat.postMessage({
                     channel: session.user_id,
-                    text: `⏰ *Time Exceeded Alert*\n\nHi ${userName}! Your planned leave time of *${plannedDuration}* has been exceeded.\nYou've been away for *${actualDuration}* so far.\n\nPlease use \`/return\` in ${config.bot.transparencyChannel} when you're back to update everyone!`
+                    text: `⏰ *Friendly Reminder* 🙂\n\nHi ${userName}! Your planned leave time of *${plannedDuration}* has been exceeded.\nYou've been away for *${actualDuration}* so far.\n\n✅ *When you're back:*\n1. Use \`/return\` in ${config.bot.transparencyChannel} to mark your return\n2. Use \`/work-start\` to begin extra work to compensate\n\nNo worries - we all lose track of time sometimes! 😊`
                 });
 
                 console.log(`⚠️ Sent time exceeded alert to ${userName}`);

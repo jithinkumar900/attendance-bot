@@ -294,26 +294,36 @@ class Database {
         return new Promise((resolve, reject) => {
             this.db.all(
                 `SELECT 
-                    u.name,
-                    u.id,
-                    COUNT(ls.id) as total_leave_sessions,
+                    COALESCE(u.name, 'Unknown User') as name,
+                    COALESCE(u.id, ls.user_id, ews.user_id, ds.user_id) as id,
+                    COUNT(DISTINCT ls.id) as total_leave_sessions,
                     COALESCE(SUM(CASE 
                         WHEN ls.end_time IS NOT NULL THEN ls.actual_duration 
                         ELSE ROUND((strftime('%s', 'now') - strftime('%s', ls.start_time)) / 60.0)
                     END), 0) as total_leave_minutes,
-                    COUNT(ews.id) as total_extra_work_sessions,
+                    COUNT(DISTINCT ews.id) as total_extra_work_sessions,
                     COALESCE(SUM(ews.duration), 0) as total_extra_work_minutes,
-                    COALESCE(SUM(ds.pending_extra_work_minutes), 0) as total_pending_minutes
-                FROM users u
-                LEFT JOIN leave_sessions ls ON u.id = ls.user_id 
+                    COALESCE(MAX(ds.pending_extra_work_minutes), 0) as total_pending_minutes
+                FROM (
+                    SELECT DISTINCT user_id FROM leave_sessions WHERE date BETWEEN ? AND ?
+                    UNION 
+                    SELECT DISTINCT user_id FROM extra_work_sessions WHERE date BETWEEN ? AND ?
+                    UNION 
+                    SELECT DISTINCT user_id FROM daily_summaries WHERE date BETWEEN ? AND ?
+                    UNION
+                    SELECT DISTINCT id as user_id FROM users
+                ) all_users
+                LEFT JOIN users u ON u.id = all_users.user_id
+                LEFT JOIN leave_sessions ls ON all_users.user_id = ls.user_id 
                     AND ls.date BETWEEN ? AND ?
-                LEFT JOIN extra_work_sessions ews ON u.id = ews.user_id 
+                LEFT JOIN extra_work_sessions ews ON all_users.user_id = ews.user_id 
                     AND ews.date BETWEEN ? AND ? AND ews.end_time IS NOT NULL
-                LEFT JOIN daily_summaries ds ON u.id = ds.user_id 
+                LEFT JOIN daily_summaries ds ON all_users.user_id = ds.user_id 
                     AND ds.date BETWEEN ? AND ?
-                GROUP BY u.id, u.name
+                GROUP BY all_users.user_id
+                HAVING total_leave_sessions > 0 OR total_extra_work_sessions > 0 OR total_pending_minutes > 0
                 ORDER BY total_leave_minutes DESC`,
-                [startDate, endDate, startDate, endDate, startDate, endDate],
+                [startDate, endDate, startDate, endDate, startDate, endDate, startDate, endDate, startDate, endDate, startDate, endDate],
                 (err, results) => {
                     if (err) reject(err);
                     else resolve(results);
