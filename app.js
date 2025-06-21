@@ -111,16 +111,9 @@ if (RENDER_URL) {
 let socketConnected = false;
 let lastActivityTime = new Date();
 
-// Monitor Socket Mode connection
-app.receiver.on('socket_mode_connect', () => {
-    socketConnected = true;
-    console.log('🔗 Socket Mode connected');
-});
-
-app.receiver.on('socket_mode_disconnect', () => {
-    socketConnected = false;
-    console.log('❌ Socket Mode disconnected');
-});
+// Monitor Socket Mode connection (simplified approach)
+// Note: Slack Bolt doesn't expose these events directly, so we'll track via activity
+let connectionWarmed = false;
 
 // Update activity timestamp on any interaction
 function updateActivity() {
@@ -133,9 +126,10 @@ async function warmupService() {
         if (RENDER_URL) {
             await axios.get(`${RENDER_URL}/ping`, { timeout: 3000 });
         }
-        // Give Socket Mode a moment to ensure connection
-        if (!socketConnected) {
+        // Give Socket Mode a moment to ensure connection on first warmup
+        if (!connectionWarmed) {
             await new Promise(resolve => setTimeout(resolve, 1000));
+            connectionWarmed = true;
         }
     } catch (error) {
         console.log('⚠️ Warmup ping failed (service may be cold starting)');
@@ -283,8 +277,8 @@ app.command('/unplanned', async ({ command, ack, client }) => {
         
         if (error.message && error.message.includes('timeout')) {
             errorMessage += " The service may be warming up. Please wait 10 seconds and try again.";
-        } else if (!socketConnected) {
-            errorMessage += " Connection is being restored. Please try again in a moment.";
+        } else if (!connectionWarmed) {
+            errorMessage += " Connection is being established. Please try again in a moment.";
         } else {
             errorMessage += " Please try again.";
         }
