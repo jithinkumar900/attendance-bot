@@ -117,6 +117,203 @@ class Utils {
         return inputPassword === configPassword;
     }
 
+    // Generate comprehensive weekly report (shows ALL users including inactive)
+    static formatComprehensiveWeeklyReport(allUsersData, startDate, endDate) {
+        const totalUsers = allUsersData.length;
+        const activeUsers = allUsersData.filter(u => u.leave_sessions_count > 0 || u.extra_work_sessions_count > 0);
+        const usersWithPending = allUsersData.filter(u => u.total_pending_minutes > 0);
+        const currentlyOnLeave = allUsersData.filter(u => u.current_status === 'ON_LEAVE');
+        const currentlyWorking = allUsersData.filter(u => u.current_status === 'WORKING_EXTRA');
+        
+        // Calculate totals
+        const totalLeaveMinutes = allUsersData.reduce((sum, user) => sum + user.total_leave_minutes, 0);
+        const totalExtraWorkMinutes = allUsersData.reduce((sum, user) => sum + user.total_extra_work_minutes, 0);
+        const totalPendingMinutes = allUsersData.reduce((sum, user) => sum + user.total_pending_minutes, 0);
+
+        // Create text summary
+        let text = `📊 *COMPREHENSIVE WEEKLY REPORT*\n`;
+        text += `📅 Period: ${startDate} to ${endDate}\n\n`;
+        text += `👥 *OVERVIEW:*\n`;
+        text += `• Total Users: ${totalUsers}\n`;
+        text += `• Active This Week: ${activeUsers.length}\n`;
+        text += `• Currently on Leave: ${currentlyOnLeave.length}\n`;
+        text += `• Currently Working Extra: ${currentlyWorking.length}\n`;
+        text += `• Users with Pending Work: ${usersWithPending.length}\n\n`;
+        text += `⏱️ *TIME SUMMARY:*\n`;
+        text += `• Total Leave: ${this.formatDuration(totalLeaveMinutes)}\n`;
+        text += `• Total Extra Work: ${this.formatDuration(totalExtraWorkMinutes)}\n`;
+        text += `• Total Pending: ${this.formatDuration(totalPendingMinutes)}`;
+
+        // Create blocks for better formatting
+        const blocks = [
+            {
+                type: "header",
+                text: {
+                    type: "plain_text",
+                    text: "📊 Weekly Report - All Users Review"
+                }
+            },
+            {
+                type: "section",
+                text: {
+                    type: "mrkdwn",
+                    text: `📅 *Period:* ${startDate} to ${endDate}`
+                }
+            },
+            {
+                type: "section",
+                fields: [
+                    {
+                        type: "mrkdwn",
+                        text: `👥 *Total Users:* ${totalUsers}`
+                    },
+                    {
+                        type: "mrkdwn",
+                        text: `✅ *Active This Week:* ${activeUsers.length}`
+                    },
+                    {
+                        type: "mrkdwn",
+                        text: `🔴 *Currently on Leave:* ${currentlyOnLeave.length}`
+                    },
+                    {
+                        type: "mrkdwn",
+                        text: `🟢 *Working Extra:* ${currentlyWorking.length}`
+                    },
+                    {
+                        type: "mrkdwn",
+                        text: `⚠️ *Pending Work:* ${usersWithPending.length}`
+                    },
+                    {
+                        type: "mrkdwn",
+                        text: `⏱️ *Total Pending:* ${this.formatDuration(totalPendingMinutes)}`
+                    }
+                ]
+            },
+            {
+                type: "divider"
+            }
+        ];
+
+        // Group users by status
+        const usersByStatus = {
+            'ON_LEAVE': currentlyOnLeave,
+            'WORKING_EXTRA': currentlyWorking,
+            'PENDING_WORK': usersWithPending.filter(u => u.current_status === 'AVAILABLE'),
+            'ACTIVE_NO_PENDING': activeUsers.filter(u => u.total_pending_minutes === 0 && u.current_status === 'AVAILABLE'),
+            'INACTIVE': allUsersData.filter(u => u.leave_sessions_count === 0 && u.extra_work_sessions_count === 0 && u.total_pending_minutes === 0)
+        };
+
+        // Add each status section
+        Object.entries(usersByStatus).forEach(([status, users]) => {
+            if (users.length === 0) return;
+
+            let statusTitle = '';
+            let statusEmoji = '';
+            switch (status) {
+                case 'ON_LEAVE':
+                    statusTitle = 'Currently on Leave';
+                    statusEmoji = '🔴';
+                    break;
+                case 'WORKING_EXTRA':
+                    statusTitle = 'Currently Working Extra';
+                    statusEmoji = '🟢';
+                    break;
+                case 'PENDING_WORK':
+                    statusTitle = 'Users with Pending Work';
+                    statusEmoji = '⚠️';
+                    break;
+                case 'ACTIVE_NO_PENDING':
+                    statusTitle = 'Active Users (No Pending Work)';
+                    statusEmoji = '✅';
+                    break;
+                case 'INACTIVE':
+                    statusTitle = 'Inactive This Week';
+                    statusEmoji = '⚪';
+                    break;
+            }
+
+            blocks.push({
+                type: "section",
+                text: {
+                    type: "mrkdwn",
+                    text: `${statusEmoji} *${statusTitle} (${users.length}):*`
+                }
+            });
+
+            // Add user details for each status
+            const userDetails = users.slice(0, 10).map(user => { // Limit to prevent message size issues
+                const leaveTime = this.formatDuration(user.total_leave_minutes || 0);
+                const extraWork = this.formatDuration(user.total_extra_work_minutes || 0);
+                const pending = this.formatDuration(user.total_pending_minutes || 0);
+                
+                let userLine = `• *${user.name}*`;
+                
+                if (status === 'ON_LEAVE') {
+                    userLine += ` - Currently on leave`;
+                } else if (status === 'WORKING_EXTRA') {
+                    userLine += ` - Working extra now`;
+                } else if (status === 'PENDING_WORK') {
+                    userLine += ` - Pending: ${pending}`;
+                } else if (status === 'ACTIVE_NO_PENDING') {
+                    userLine += ` - Leave: ${leaveTime}, Extra: ${extraWork}`;
+                } else if (status === 'INACTIVE') {
+                    userLine += ` - No activity this week`;
+                }
+                
+                return userLine;
+            }).join('\n');
+
+            blocks.push({
+                type: "section",
+                text: {
+                    type: "mrkdwn",
+                    text: userDetails
+                }
+            });
+
+            if (users.length > 10) {
+                blocks.push({
+                    type: "context",
+                    elements: [
+                        {
+                            type: "mrkdwn",
+                            text: `_... and ${users.length - 10} more users_`
+                        }
+                    ]
+                });
+            }
+        });
+
+        // Add summary footer
+        blocks.push(
+            {
+                type: "divider"
+            },
+            {
+                type: "context",
+                elements: [
+                    {
+                        type: "mrkdwn",
+                        text: `📊 *Summary:* ${totalUsers} total users | ${this.formatDuration(totalLeaveMinutes)} leave | ${this.formatDuration(totalExtraWorkMinutes)} extra work | ${this.formatDuration(totalPendingMinutes)} pending`
+                    }
+                ]
+            }
+        );
+
+        return { text, blocks };
+    }
+
+    // Generate comprehensive monthly report (same structure but different title)
+    static formatComprehensiveMonthlyReport(allUsersData, startDate, endDate) {
+        const report = this.formatComprehensiveWeeklyReport(allUsersData, startDate, endDate);
+        
+        // Update title and header for monthly report
+        report.text = report.text.replace('COMPREHENSIVE WEEKLY REPORT', 'COMPREHENSIVE MONTHLY REPORT');
+        report.blocks[0].text.text = "📊 Monthly Report - All Users Review";
+        
+        return report;
+    }
+
     // Generate admin report format
     static formatAdminReport(data, startDate, endDate) {
         let report = `📈 *ADMIN REPORT* (${startDate} to ${endDate})\n`;

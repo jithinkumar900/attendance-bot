@@ -871,11 +871,62 @@ app.action('report_weekly', async ({ body, ack, respond }) => {
         startDate.setDate(startDate.getDate() - 7);
         const startDateStr = startDate.toISOString().split('T')[0];
         
-        const reportData = await db.getAdminReport(startDateStr, endDate);
-        const report = Utils.formatAdminReport(reportData, startDateStr, endDate);
+        // Get comprehensive user data including inactive users
+        const allUsersData = await new Promise((resolve, reject) => {
+            db.db.all(
+                `SELECT 
+                    u.id,
+                    u.name,
+                    -- Leave sessions data
+                    COUNT(DISTINCT ls.id) as leave_sessions_count,
+                    COALESCE(SUM(CASE 
+                        WHEN ls.end_time IS NOT NULL THEN ls.actual_duration 
+                        ELSE ROUND((strftime('%s', 'now') - strftime('%s', ls.start_time)) / 60.0)
+                    END), 0) as total_leave_minutes,
+                    -- Extra work data
+                    COUNT(DISTINCT ews.id) as extra_work_sessions_count,
+                    COALESCE(SUM(ews.duration), 0) as total_extra_work_minutes,
+                    -- Pending work data
+                    COALESCE(SUM(ds.pending_extra_work_minutes), 0) as total_pending_minutes,
+                    -- Current status
+                    CASE 
+                        WHEN ls_active.id IS NOT NULL THEN 'ON_LEAVE'
+                        WHEN ews_active.id IS NOT NULL THEN 'WORKING_EXTRA'
+                        ELSE 'AVAILABLE'
+                    END as current_status
+                FROM users u
+                LEFT JOIN leave_sessions ls ON u.id = ls.user_id 
+                    AND ls.date BETWEEN ? AND ?
+                LEFT JOIN extra_work_sessions ews ON u.id = ews.user_id 
+                    AND ews.date BETWEEN ? AND ? AND ews.end_time IS NOT NULL
+                LEFT JOIN daily_summaries ds ON u.id = ds.user_id 
+                    AND ds.date BETWEEN ? AND ?
+                LEFT JOIN leave_sessions ls_active ON u.id = ls_active.user_id 
+                    AND ls_active.end_time IS NULL
+                LEFT JOIN extra_work_sessions ews_active ON u.id = ews_active.user_id 
+                    AND ews_active.end_time IS NULL
+                GROUP BY u.id, u.name
+                ORDER BY 
+                    CASE 
+                        WHEN ls_active.id IS NOT NULL THEN 1
+                        WHEN ews_active.id IS NOT NULL THEN 2
+                        WHEN total_pending_minutes > 0 THEN 3
+                        ELSE 4
+                    END,
+                    total_leave_minutes DESC`,
+                [startDateStr, endDate, startDateStr, endDate, startDateStr, endDate],
+                (err, results) => {
+                    if (err) reject(err);
+                    else resolve(results || []);
+                }
+            );
+        });
+        
+        const report = Utils.formatComprehensiveWeeklyReport(allUsersData, startDateStr, endDate);
         
         await respond({
-            text: report,
+            text: report.text,
+            blocks: report.blocks,
             replace_original: false,
             response_type: 'ephemeral'
         });
@@ -893,11 +944,62 @@ app.action('report_monthly', async ({ body, ack, respond }) => {
         startDate.setDate(startDate.getDate() - 30);
         const startDateStr = startDate.toISOString().split('T')[0];
         
-        const reportData = await db.getAdminReport(startDateStr, endDate);
-        const report = Utils.formatAdminReport(reportData, startDateStr, endDate);
+        // Get comprehensive user data including inactive users (same query as weekly)
+        const allUsersData = await new Promise((resolve, reject) => {
+            db.db.all(
+                `SELECT 
+                    u.id,
+                    u.name,
+                    -- Leave sessions data
+                    COUNT(DISTINCT ls.id) as leave_sessions_count,
+                    COALESCE(SUM(CASE 
+                        WHEN ls.end_time IS NOT NULL THEN ls.actual_duration 
+                        ELSE ROUND((strftime('%s', 'now') - strftime('%s', ls.start_time)) / 60.0)
+                    END), 0) as total_leave_minutes,
+                    -- Extra work data
+                    COUNT(DISTINCT ews.id) as extra_work_sessions_count,
+                    COALESCE(SUM(ews.duration), 0) as total_extra_work_minutes,
+                    -- Pending work data
+                    COALESCE(SUM(ds.pending_extra_work_minutes), 0) as total_pending_minutes,
+                    -- Current status
+                    CASE 
+                        WHEN ls_active.id IS NOT NULL THEN 'ON_LEAVE'
+                        WHEN ews_active.id IS NOT NULL THEN 'WORKING_EXTRA'
+                        ELSE 'AVAILABLE'
+                    END as current_status
+                FROM users u
+                LEFT JOIN leave_sessions ls ON u.id = ls.user_id 
+                    AND ls.date BETWEEN ? AND ?
+                LEFT JOIN extra_work_sessions ews ON u.id = ews.user_id 
+                    AND ews.date BETWEEN ? AND ? AND ews.end_time IS NOT NULL
+                LEFT JOIN daily_summaries ds ON u.id = ds.user_id 
+                    AND ds.date BETWEEN ? AND ?
+                LEFT JOIN leave_sessions ls_active ON u.id = ls_active.user_id 
+                    AND ls_active.end_time IS NULL
+                LEFT JOIN extra_work_sessions ews_active ON u.id = ews_active.user_id 
+                    AND ews_active.end_time IS NULL
+                GROUP BY u.id, u.name
+                ORDER BY 
+                    CASE 
+                        WHEN ls_active.id IS NOT NULL THEN 1
+                        WHEN ews_active.id IS NOT NULL THEN 2
+                        WHEN total_pending_minutes > 0 THEN 3
+                        ELSE 4
+                    END,
+                    total_leave_minutes DESC`,
+                [startDateStr, endDate, startDateStr, endDate, startDateStr, endDate],
+                (err, results) => {
+                    if (err) reject(err);
+                    else resolve(results || []);
+                }
+            );
+        });
+        
+        const report = Utils.formatComprehensiveMonthlyReport(allUsersData, startDateStr, endDate);
         
         await respond({
-            text: report,
+            text: report.text,
+            blocks: report.blocks,
             replace_original: false,
             response_type: 'ephemeral'
         });
