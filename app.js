@@ -917,146 +917,162 @@ app.action('admin_actions', async ({ body, ack, respond }) => {
 app.action('report_weekly', async ({ body, ack, respond }) => {
     await ack();
     try {
+        console.log('📊 Weekly report requested');
+        
         const endDate = Utils.getCurrentDate();
         const startDate = new Date();
         startDate.setDate(startDate.getDate() - 7);
         const startDateStr = startDate.toISOString().split('T')[0];
         
-        // Get comprehensive user data including inactive users
-        const allUsersData = await new Promise((resolve, reject) => {
+        console.log(`📅 Date range: ${startDateStr} to ${endDate}`);
+        
+        // Simplified query to avoid complex JOINs that might fail on Render
+        const userData = await new Promise((resolve, reject) => {
             db.db.all(
                 `SELECT 
                     u.id,
                     u.name,
-                    -- Leave sessions data
-                    COUNT(DISTINCT ls.id) as leave_sessions_count,
-                    COALESCE(SUM(CASE 
-                        WHEN ls.end_time IS NOT NULL THEN ls.actual_duration 
-                        ELSE ROUND((strftime('%s', 'now') - strftime('%s', ls.start_time)) / 60.0)
-                    END), 0) as total_leave_minutes,
-                    -- Extra work data
-                    COUNT(DISTINCT ews.id) as extra_work_sessions_count,
-                    COALESCE(SUM(ews.duration), 0) as total_extra_work_minutes,
-                    -- Pending work data
-                    COALESCE(SUM(ds.pending_extra_work_minutes), 0) as total_pending_minutes,
-                    -- Current status
-                    CASE 
-                        WHEN ls_active.id IS NOT NULL THEN 'ON_LEAVE'
-                        WHEN ews_active.id IS NOT NULL THEN 'WORKING_EXTRA'
-                        ELSE 'AVAILABLE'
-                    END as current_status
+                    COUNT(DISTINCT ls.id) as leave_count,
+                    COALESCE(SUM(ls.actual_duration), 0) as total_leave,
+                    COUNT(DISTINCT ews.id) as work_count,
+                    COALESCE(SUM(ews.duration), 0) as total_work
                 FROM users u
                 LEFT JOIN leave_sessions ls ON u.id = ls.user_id 
-                    AND ls.date BETWEEN ? AND ?
+                    AND ls.date BETWEEN ? AND ? AND ls.end_time IS NOT NULL
                 LEFT JOIN extra_work_sessions ews ON u.id = ews.user_id 
                     AND ews.date BETWEEN ? AND ? AND ews.end_time IS NOT NULL
-                LEFT JOIN daily_summaries ds ON u.id = ds.user_id 
-                    AND ds.date BETWEEN ? AND ?
-                LEFT JOIN leave_sessions ls_active ON u.id = ls_active.user_id 
-                    AND ls_active.end_time IS NULL
-                LEFT JOIN extra_work_sessions ews_active ON u.id = ews_active.user_id 
-                    AND ews_active.end_time IS NULL
                 GROUP BY u.id, u.name
-                ORDER BY 
-                    CASE 
-                        WHEN ls_active.id IS NOT NULL THEN 1
-                        WHEN ews_active.id IS NOT NULL THEN 2
-                        WHEN total_pending_minutes > 0 THEN 3
-                        ELSE 4
-                    END,
-                    total_leave_minutes DESC`,
-                [startDateStr, endDate, startDateStr, endDate, startDateStr, endDate],
+                HAVING leave_count > 0 OR work_count > 0
+                ORDER BY total_leave DESC`,
+                [startDateStr, endDate, startDateStr, endDate],
                 (err, results) => {
-                    if (err) reject(err);
-                    else resolve(results || []);
+                    if (err) {
+                        console.error('Weekly report query error:', err);
+                        reject(err);
+                    } else {
+                        console.log(`📋 Found ${results.length} users with activity`);
+                        resolve(results || []);
+                    }
                 }
             );
         });
         
-        const report = Utils.formatComprehensiveWeeklyReport(allUsersData, startDateStr, endDate);
+        // Create simple report text
+        let reportText = `📊 *WEEKLY REPORT*\n📅 ${startDateStr} to ${endDate}\n\n`;
+        
+        if (userData.length === 0) {
+            reportText += "✅ No activity this week!";
+        } else {
+            reportText += `👥 *Active Users: ${userData.length}*\n\n`;
+            
+            userData.forEach(user => {
+                const leave = Utils.formatDuration(user.total_leave || 0);
+                const work = Utils.formatDuration(user.total_work || 0);
+                reportText += `• *${user.name}*\n`;
+                reportText += `  Leave: ${leave} (${user.leave_count} sessions)\n`;
+                reportText += `  Extra Work: ${work} (${user.work_count} sessions)\n\n`;
+            });
+        }
+        
+        console.log('📤 Sending weekly report response');
         
         await respond({
-            text: report.text,
-            blocks: report.blocks,
+            text: reportText,
             replace_original: false,
             response_type: 'ephemeral'
         });
+        
     } catch (error) {
-        console.error('Error in weekly report:', error);
-        await respond({ text: "Error generating weekly report.", response_type: 'ephemeral' });
+        console.error('❌ Error in weekly report:', error);
+        await respond({ 
+            text: `❌ Error generating weekly report: ${error.message}`, 
+            response_type: 'ephemeral' 
+        });
     }
 });
 
 app.action('report_monthly', async ({ body, ack, respond }) => {
     await ack();
     try {
+        console.log('📊 Monthly report requested');
+        
         const endDate = Utils.getCurrentDate();
         const startDate = new Date();
         startDate.setDate(startDate.getDate() - 30);
         const startDateStr = startDate.toISOString().split('T')[0];
         
-        // Get comprehensive user data including inactive users (same query as weekly)
-        const allUsersData = await new Promise((resolve, reject) => {
+        console.log(`📅 Date range: ${startDateStr} to ${endDate}`);
+        
+        // Simplified query to avoid complex JOINs that might fail on Render
+        const userData = await new Promise((resolve, reject) => {
             db.db.all(
                 `SELECT 
                     u.id,
                     u.name,
-                    -- Leave sessions data
-                    COUNT(DISTINCT ls.id) as leave_sessions_count,
-                    COALESCE(SUM(CASE 
-                        WHEN ls.end_time IS NOT NULL THEN ls.actual_duration 
-                        ELSE ROUND((strftime('%s', 'now') - strftime('%s', ls.start_time)) / 60.0)
-                    END), 0) as total_leave_minutes,
-                    -- Extra work data
-                    COUNT(DISTINCT ews.id) as extra_work_sessions_count,
-                    COALESCE(SUM(ews.duration), 0) as total_extra_work_minutes,
-                    -- Pending work data
-                    COALESCE(SUM(ds.pending_extra_work_minutes), 0) as total_pending_minutes,
-                    -- Current status
-                    CASE 
-                        WHEN ls_active.id IS NOT NULL THEN 'ON_LEAVE'
-                        WHEN ews_active.id IS NOT NULL THEN 'WORKING_EXTRA'
-                        ELSE 'AVAILABLE'
-                    END as current_status
+                    COUNT(DISTINCT ls.id) as leave_count,
+                    COALESCE(SUM(ls.actual_duration), 0) as total_leave,
+                    COUNT(DISTINCT ews.id) as work_count,
+                    COALESCE(SUM(ews.duration), 0) as total_work
                 FROM users u
                 LEFT JOIN leave_sessions ls ON u.id = ls.user_id 
-                    AND ls.date BETWEEN ? AND ?
+                    AND ls.date BETWEEN ? AND ? AND ls.end_time IS NOT NULL
                 LEFT JOIN extra_work_sessions ews ON u.id = ews.user_id 
                     AND ews.date BETWEEN ? AND ? AND ews.end_time IS NOT NULL
-                LEFT JOIN daily_summaries ds ON u.id = ds.user_id 
-                    AND ds.date BETWEEN ? AND ?
-                LEFT JOIN leave_sessions ls_active ON u.id = ls_active.user_id 
-                    AND ls_active.end_time IS NULL
-                LEFT JOIN extra_work_sessions ews_active ON u.id = ews_active.user_id 
-                    AND ews_active.end_time IS NULL
                 GROUP BY u.id, u.name
-                ORDER BY 
-                    CASE 
-                        WHEN ls_active.id IS NOT NULL THEN 1
-                        WHEN ews_active.id IS NOT NULL THEN 2
-                        WHEN total_pending_minutes > 0 THEN 3
-                        ELSE 4
-                    END,
-                    total_leave_minutes DESC`,
-                [startDateStr, endDate, startDateStr, endDate, startDateStr, endDate],
+                HAVING leave_count > 0 OR work_count > 0
+                ORDER BY total_leave DESC`,
+                [startDateStr, endDate, startDateStr, endDate],
                 (err, results) => {
-                    if (err) reject(err);
-                    else resolve(results || []);
+                    if (err) {
+                        console.error('Monthly report query error:', err);
+                        reject(err);
+                    } else {
+                        console.log(`📋 Found ${results.length} users with activity`);
+                        resolve(results || []);
+                    }
                 }
             );
         });
         
-        const report = Utils.formatComprehensiveMonthlyReport(allUsersData, startDateStr, endDate);
+        // Create simple report text
+        let reportText = `📊 *MONTHLY REPORT*\n📅 ${startDateStr} to ${endDate}\n\n`;
+        
+        if (userData.length === 0) {
+            reportText += "✅ No activity this month!";
+        } else {
+            reportText += `👥 *Active Users: ${userData.length}*\n\n`;
+            
+            // Calculate totals
+            const totalLeave = userData.reduce((sum, u) => sum + (u.total_leave || 0), 0);
+            const totalWork = userData.reduce((sum, u) => sum + (u.total_work || 0), 0);
+            const totalSessions = userData.reduce((sum, u) => sum + (u.leave_count || 0), 0);
+            
+            reportText += `📈 *Summary:*\n`;
+            reportText += `• Total Leave: ${Utils.formatDuration(totalLeave)} (${totalSessions} sessions)\n`;
+            reportText += `• Total Extra Work: ${Utils.formatDuration(totalWork)}\n\n`;
+            
+            reportText += `👤 *Per User:*\n`;
+            userData.forEach(user => {
+                const leave = Utils.formatDuration(user.total_leave || 0);
+                const work = Utils.formatDuration(user.total_work || 0);
+                reportText += `• *${user.name}*: Leave ${leave}, Work ${work}\n`;
+            });
+        }
+        
+        console.log('📤 Sending monthly report response');
         
         await respond({
-            text: report.text,
-            blocks: report.blocks,
+            text: reportText,
             replace_original: false,
             response_type: 'ephemeral'
         });
+        
     } catch (error) {
-        console.error('Error in monthly report:', error);
-        await respond({ text: "Error generating monthly report.", response_type: 'ephemeral' });
+        console.error('❌ Error in monthly report:', error);
+        await respond({ 
+            text: `❌ Error generating monthly report: ${error.message}`, 
+            response_type: 'ephemeral' 
+        });
     }
 });
 
