@@ -1751,14 +1751,4 @@ process.on('SIGTERM', () => {
     console.log('\nShutting down bot...');
     db.close();
     process.exit(0);
-});
-
-// Test action to see if buttons work at all
-app.action('test_action', async ({ body, ack, client }) => {
-    console.log('🧪 TEST ACTION TRIGGERED!');
-    await ack();
-    await client.chat.postMessage({
-        channel: body.user.id,
-        text: "🎉 TEST SUCCESS! Buttons are working!"
-    });
 }); 
