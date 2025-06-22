@@ -405,17 +405,6 @@ app.command('/return', async ({ command, ack, say, client }) => {
         const actualDuration = Utils.formatDuration(session.actualDuration);
         const plannedDuration = Utils.formatDuration(session.planned_duration);
 
-        // Check if actual time exceeded planned time
-        if (session.actualDuration > session.planned_duration) {
-            const exceededBy = Utils.formatDuration(session.actualDuration - session.planned_duration);
-            
-            // Send DM about time exceeded
-            await client.chat.postMessage({
-                channel: user_id,
-                text: `😊 *Time Summary*\n\nHi! You planned to be away for *${plannedDuration}* but were actually away for *${actualDuration}*.\nExtra time taken: *${exceededBy}*\n\n🔄 *Next Steps:*\n1. Use \`/work-start\` to begin ${exceededBy} of extra work\n2. I'll help track your progress and auto-complete when done!\n\nThanks for being transparent! 🙏`
-            });
-        }
-
         // Send transparency message
         const message = Utils.formatLeaveEndMessage(userName, actualDuration);
         
@@ -428,7 +417,7 @@ app.command('/return', async ({ command, ack, say, client }) => {
         const today = Utils.getCurrentDate();
         const summary = await db.updateDailySummary(user_id, today);
 
-        // Check if total leave exceeds threshold
+        // Check if total leave exceeds threshold (half-day scenario)
         if (Utils.exceedsThreshold(summary.totalLeave, config.bot.maxUnplannedHours)) {
             const totalLeaveFormatted = Utils.formatDuration(summary.totalLeave);
             const halfDayMessage = Utils.formatHalfDayMessage(totalLeaveFormatted, config.bot.halfDayFormUrl);
@@ -438,6 +427,17 @@ app.command('/return', async ({ command, ack, say, client }) => {
                 user: user_id,
                 text: halfDayMessage
             });
+        } else {
+            // Only suggest extra work if leave doesn't exceed half-day threshold
+            if (session.actualDuration > session.planned_duration) {
+                const exceededBy = Utils.formatDuration(session.actualDuration - session.planned_duration);
+                
+                // Send DM about time exceeded only if we're not in half-day territory
+                await client.chat.postMessage({
+                    channel: user_id,
+                    text: `😊 *Time Summary*\n\nHi! You planned to be away for *${plannedDuration}* but were actually away for *${actualDuration}*.\nExtra time taken: *${exceededBy}*\n\n🔄 *Next Steps:*\n1. Use \`/work-start\` to begin ${exceededBy} of extra work\n2. I'll help track your progress and auto-complete when done!\n\nThanks for being transparent! 🙏`
+                });
+            }
         }
 
         // Confirm to user (private)

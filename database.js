@@ -259,7 +259,12 @@ class Database {
             )).then(([leaveResult, extraWorkResult]) => {
                 const totalLeave = leaveResult.total_leave || 0;
                 const totalExtraWork = extraWorkResult.total_extra_work || 0;
-                const pendingExtraWork = Math.max(0, totalLeave - totalExtraWork);
+                
+                // Only count leave time ≤ 2.5h (150 minutes) towards pending extra work
+                // Leave time > 2.5h is handled as half-day leave and doesn't need compensation
+                const maxUnplannedMinutes = 2.5 * 60; // 150 minutes
+                const compensatableLeave = Math.min(totalLeave, maxUnplannedMinutes);
+                const pendingExtraWork = Math.max(0, compensatableLeave - totalExtraWork);
 
                 this.db.run(
                     `INSERT OR REPLACE INTO daily_summaries 
