@@ -1297,6 +1297,17 @@ app.view('unplanned_leave_modal', async ({ ack, body, client, view }) => {
     try {
         const user_id = body.user.id;
         
+        // Check if user already has an active leave session (safety check)
+        const activeSession = await db.getUserActiveLeaveSession(user_id);
+        if (activeSession) {
+            await client.chat.postEphemeral({
+                channel: config.bot.transparencyChannel,
+                user: user_id,
+                text: "❌ You already have an active leave session. Please use `/return` to end it first, or use the extend option."
+            });
+            return;
+        }
+        
         // Extract values from the modal
         const values = view.state.values;
         
@@ -1345,7 +1356,7 @@ app.view('unplanned_leave_modal', async ({ ack, body, client, view }) => {
         // Start leave session
         await db.startLeaveSession(user_id, durationMinutes, reason);
         
-        // Send transparency message to the configured channel
+        // Send transparency message to the configured channel (PUBLIC)
         const message = Utils.formatLeaveTransparencyMessage(userName, formattedDuration, reason, returnTime);
         
         await client.chat.postMessage({

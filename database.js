@@ -83,14 +83,34 @@ class Database {
         const date = now.toISOString().split('T')[0];
         
         return new Promise((resolve, reject) => {
-            this.db.run(
-                `INSERT INTO leave_sessions 
-                (user_id, start_time, planned_duration, reason, date) 
-                VALUES (?, ?, ?, ?, ?)`,
-                [userId, now.toISOString(), plannedDuration, reason, date],
-                function(err) {
-                    if (err) reject(err);
-                    else resolve(this.lastID);
+            // First check if user already has an active session
+            this.db.get(
+                `SELECT * FROM leave_sessions 
+                WHERE user_id = ? AND end_time IS NULL 
+                ORDER BY start_time DESC LIMIT 1`,
+                [userId],
+                (err, existingSession) => {
+                    if (err) {
+                        reject(err);
+                        return;
+                    }
+                    
+                    if (existingSession) {
+                        reject(new Error('User already has an active leave session'));
+                        return;
+                    }
+                    
+                    // No existing session, create new one
+                    this.db.run(
+                        `INSERT INTO leave_sessions 
+                        (user_id, start_time, planned_duration, reason, date) 
+                        VALUES (?, ?, ?, ?, ?)`,
+                        [userId, now.toISOString(), plannedDuration, reason, date],
+                        function(err) {
+                            if (err) reject(err);
+                            else resolve(this.lastID);
+                        }
+                    );
                 }
             );
         });
