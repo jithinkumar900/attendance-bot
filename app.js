@@ -37,9 +37,6 @@ const app = new App({
 // Initialize database
 const db = new Database(process.env.DATABASE_PATH);
 
-// Store active extra work prompts to avoid duplicates
-const activePrompts = new Map();
-
 // ================================
 // KEEPALIVE MECHANISM (Prevent Render Spin-Down)
 // ================================
@@ -146,6 +143,54 @@ cron.schedule('* * * * *', () => {
         if (currentHour >= 9 && currentHour <= 18) { // Business hours IST (adjusted for timezone)
             warmupService().catch(() => {}); // Silent warmup
         }
+    }
+});
+
+// Auto-complete extra work sessions when enough time has been worked
+cron.schedule('* * * * *', async () => {
+    try {
+        // Get all active extra work sessions
+        const activeSessions = await new Promise((resolve, reject) => {
+            db.db.all(
+                `SELECT ews.*, u.name as user_name FROM extra_work_sessions ews
+                JOIN users u ON ews.user_id = u.id
+                WHERE ews.end_time IS NULL`,
+                (err, sessions) => {
+                    if (err) reject(err);
+                    else resolve(sessions || []);
+                }
+            );
+        });
+
+        // Check each active session for auto-completion
+        for (const session of activeSessions) {
+            const currentDuration = Math.round((new Date() - new Date(session.start_time)) / (1000 * 60));
+            const today = Utils.getCurrentDate();
+            const summary = await db.getUserDailySummary(session.user_id, today);
+            
+            // Auto-complete if worked enough time
+            if (summary && currentDuration >= summary.pending_extra_work_minutes) {
+                try {
+                    const completedSession = await db.endExtraWorkSession(session.user_id);
+                    const duration = Utils.formatDuration(completedSession.duration);
+
+                    // Update daily summary
+                    await db.updateDailySummary(session.user_id, today);
+
+                    // Send completion message
+                    await app.client.chat.postMessage({
+                        channel: session.user_id,
+                        text: `🎉 *Extra Work Auto-Completed!*\n\nAwesome! You've worked for ${duration} which covers your pending time.\nYour extra work session has been automatically completed.\n\nGreat job staying committed! 💪✨`
+                    });
+
+                    console.log(`✅ Auto-completed extra work for user ${session.user_id} - worked ${duration}`);
+                } catch (error) {
+                    console.error('Error auto-completing extra work:', error);
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Error checking for auto-completion:', error);
     }
 });
 
@@ -455,11 +500,11 @@ app.command('/work-start', async ({ command, ack, say, client }) => {
         await client.chat.postEphemeral({
             channel: command.channel_id,
             user: user_id,
-            text: `⏰ *Extra work session started!*\n\nI'll check on you every hour and auto-complete when you've worked enough time. Good luck! 💪`
+            text: `⏰ *Extra work session started!*\n\nWork as needed - I'll auto-complete when you've worked enough time to cover your leave. Use \`/work-end\` anytime to finish manually. Good luck! 💪`
         });
 
-        // Schedule hourly prompts
-        scheduleExtraWorkPrompts(user_id, client);
+        // Note: Auto-completion will happen via the minute-by-minute check system
+        // No need for hourly prompts - just let them work in peace
 
     } catch (error) {
         console.error('Error in work-start:', error);
@@ -490,12 +535,6 @@ app.command('/work-end', async ({ command, ack, say, client }) => {
         // Update daily summary
         const today = Utils.getCurrentDate();
         await db.updateDailySummary(user_id, today);
-
-        // Clear any active prompts
-        if (activePrompts.has(user_id)) {
-            clearTimeout(activePrompts.get(user_id));
-            activePrompts.delete(user_id);
-        }
 
         // Post public message about extra work completion
         await say({
@@ -641,108 +680,6 @@ app.command('/admin', async ({ command, ack, say, client }) => {
 // ================================
 // EXTRA WORK PROMPTS
 // ================================
-
-function scheduleExtraWorkPrompts(userId, client) {
-    const promptUser = async () => {
-        try {
-            // Check if session is still active
-            const activeSession = await db.getUserActiveExtraWorkSession(userId);
-            if (!activeSession) {
-                activePrompts.delete(userId);
-                return;
-            }
-
-            const startTime = new Date(activeSession.start_time);
-            const currentDuration = Utils.calculateActualDuration(activeSession.start_time, new Date());
-            const formattedDuration = Utils.formatDuration(currentDuration);
-
-            // Check if enough work has been completed (get today's pending work)
-            const today = Utils.getCurrentDate();
-            const summary = await db.getUserDailySummary(userId, today);
-            
-            if (summary && currentDuration >= summary.pending_extra_work_minutes) {
-                // Auto-complete the work session
-                try {
-                    const session = await db.endExtraWorkSession(userId);
-                    const duration = Utils.formatDuration(session.duration);
-
-                    // Update daily summary
-                    await db.updateDailySummary(userId, today);
-
-                    // Clear prompts
-                    if (activePrompts.has(userId)) {
-                        clearTimeout(activePrompts.get(userId));
-                        activePrompts.delete(userId);
-                    }
-
-                    // Send completion message
-                    await client.chat.postMessage({
-                        channel: userId,
-                        text: `🎉 *Extra Work Completed!*\n\nAwesome! You've worked for ${duration} which covers your pending time.\nYour extra work session has been automatically completed.\n\nGreat job staying committed! 💪✨`
-                    });
-
-                    console.log(`✅ Auto-completed extra work for user ${userId} - worked ${duration}`);
-                    return;
-                } catch (error) {
-                    console.error('Error auto-completing extra work:', error);
-                }
-            }
-
-            const message = Utils.formatExtraWorkPrompt(formattedDuration);
-
-            const result = await client.chat.postMessage({
-                channel: userId,
-                text: message,
-                blocks: [
-                    {
-                        type: "section",
-                        text: {
-                            type: "mrkdwn",
-                            text: message
-                        }
-                    },
-                    {
-                        type: "actions",
-                        elements: [
-                            {
-                                type: "button",
-                                text: {
-                                    type: "plain_text",
-                                    text: "✅ Continue Working"
-                                },
-                                action_id: "extra_work_continue",
-                                value: userId,
-                                style: "primary"
-                            },
-                            {
-                                type: "button",
-                                text: {
-                                    type: "plain_text",
-                                    text: "❌ Stop Working"
-                                },
-                                action_id: "extra_work_stop",
-                                value: userId,
-                                style: "danger"
-                            }
-                        ]
-                    }
-                ]
-            });
-
-            // Schedule next prompt in 1 hour
-            const timeoutId = setTimeout(() => promptUser(), 60 * 60 * 1000); // 1 hour
-            activePrompts.set(userId, timeoutId);
-
-        } catch (error) {
-            console.error('Error in extra work prompt:', error);
-            activePrompts.delete(userId);
-        }
-    };
-
-    // Start first prompt in 1 hour
-    const timeoutId = setTimeout(() => promptUser(), 60 * 60 * 1000); // 1 hour
-    activePrompts.set(userId, timeoutId);
-}
 
 // ================================
 // ADMIN HELPER FUNCTIONS
@@ -1624,15 +1561,14 @@ app.action('extra_work_stop', async ({ body, ack, say }) => {
         const today = Utils.getCurrentDate();
         await db.updateDailySummary(userId, today);
 
-        // Clear prompts
-        if (activePrompts.has(userId)) {
-            clearTimeout(activePrompts.get(userId));
-            activePrompts.delete(userId);
-        }
-
+        // Post public message about extra work completion
         await say({
-            text: `✅ Extra work session ended! Total duration: ${duration}`,
-            response_type: 'ephemeral'
+            text: `✅ *${userId}* completed extra work session. Duration: ${duration}`
+        });
+
+        // Send private confirmation to user
+        await say({
+            text: `✅ *Extra work session completed!*\n\nDuration: ${duration}\nGreat job! 🎉`
         });
 
     } catch (error) {
