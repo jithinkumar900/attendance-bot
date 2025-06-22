@@ -722,8 +722,6 @@ class Utils {
         const { user, recentSessions, summaries } = userDetails;
         
         let text = `👤 *USER DETAILS: ${user.name}*\n\n`;
-        text += `📧 Email: ${user.email || 'Not provided'}\n`;
-        text += `🆔 ID: ${user.id}\n\n`;
 
         // Recent Sessions
         if (recentSessions.length > 0) {

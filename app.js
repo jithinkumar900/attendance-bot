@@ -177,7 +177,7 @@ app.command('/unplanned', async ({ command, ack, client }) => {
                 view: {
                     type: 'modal',
                     callback_id: 'extend_leave_modal',
-                    title: { type: 'plain_text', text: 'Already on Leave' },
+                    title: { type: 'plain_text', text: '⚠️ Already on Leave' },
                     submit: { type: 'plain_text', text: 'Extend Leave' },
                     close: { type: 'plain_text', text: 'Cancel' },
                     private_metadata: JSON.stringify({ sessionId: activeSession.id, currentDuration, plannedDuration }),
@@ -186,7 +186,7 @@ app.command('/unplanned', async ({ command, ack, client }) => {
                             type: 'section',
                             text: {
                                 type: 'mrkdwn',
-                                text: `⏰ *Current Leave Status:*\n• Started: ${Utils.formatDuration(currentDuration)} ago\n• Planned Duration: ${Utils.formatDuration(plannedDuration)}\n• Time Remaining: ${Utils.formatDuration(remainingTime)}\n\n*Would you like to extend your leave duration?*`
+                                text: `🚨 *You are already on leave!*\n\nYour current leave session:\n• *Reason:* ${activeSession.reason}\n• *Planned Duration:* ${Utils.formatDuration(plannedDuration)}\n• *Time Elapsed:* ${Utils.formatDuration(currentDuration)}\n• *Time Remaining:* ${Utils.formatDuration(remainingTime)}\n\n${currentDuration > plannedDuration ? '⚠️ *You have exceeded your planned time!*\n\n' : ''}Would you like to extend your leave duration?`
                             }
                         },
                         {
@@ -229,7 +229,7 @@ app.command('/unplanned', async ({ command, ack, client }) => {
                             elements: [
                                 {
                                     type: 'mrkdwn',
-                                    text: '💡 *Or use `/return` to end your current session and start fresh*'
+                                    text: '💡 *Tip: Use `/return` to end your current session and start fresh*'
                                 }
                             ]
                         }
