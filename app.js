@@ -851,7 +851,7 @@ app.action('admin_actions', async ({ body, ack, respond }) => {
 });
 
 // Report Actions
-app.action('report_weekly', async ({ body, ack, respond }) => {
+app.action('report_weekly', async ({ body, ack, client }) => {
     console.log('🔥 WEEKLY REPORT BUTTON CLICKED! Body:', JSON.stringify(body, null, 2));
     await ack();
     try {
@@ -914,10 +914,10 @@ app.action('report_weekly', async ({ body, ack, respond }) => {
         
         console.log('📤 Sending weekly report response, length:', reportText.length);
         
-        await respond({
-            text: reportText,
-            replace_original: false,
-            response_type: 'ephemeral'
+        // Send as direct message since this is a modal interaction
+        await client.chat.postMessage({
+            channel: body.user.id,
+            text: reportText
         });
         
         console.log('✅ Weekly report sent successfully');
@@ -925,14 +925,14 @@ app.action('report_weekly', async ({ body, ack, respond }) => {
     } catch (error) {
         console.error('❌ Error in weekly report:', error);
         console.error('Error stack:', error.stack);
-        await respond({ 
-            text: `❌ Error generating weekly report: ${error.message}`, 
-            response_type: 'ephemeral' 
+        await client.chat.postMessage({
+            channel: body.user.id,
+            text: `❌ Error generating weekly report: ${error.message}`
         });
     }
 });
 
-app.action('report_monthly', async ({ body, ack, respond }) => {
+app.action('report_monthly', async ({ body, ack, client }) => {
     console.log('🔥 MONTHLY REPORT BUTTON CLICKED! Body:', JSON.stringify(body, null, 2));
     await ack();
     try {
@@ -1003,10 +1003,10 @@ app.action('report_monthly', async ({ body, ack, respond }) => {
         
         console.log('📤 Sending monthly report response, length:', reportText.length);
         
-        await respond({
-            text: reportText,
-            replace_original: false,
-            response_type: 'ephemeral'
+        // Send as direct message since this is a modal interaction
+        await client.chat.postMessage({
+            channel: body.user.id,
+            text: reportText
         });
         
         console.log('✅ Monthly report sent successfully');
@@ -1014,9 +1014,9 @@ app.action('report_monthly', async ({ body, ack, respond }) => {
     } catch (error) {
         console.error('❌ Error in monthly report:', error);
         console.error('Error stack:', error.stack);
-        await respond({ 
-            text: `❌ Error generating monthly report: ${error.message}`, 
-            response_type: 'ephemeral' 
+        await client.chat.postMessage({
+            channel: body.user.id,
+            text: `❌ Error generating monthly report: ${error.message}`
         });
     }
 });
@@ -1754,11 +1754,11 @@ process.on('SIGTERM', () => {
 });
 
 // Test action to see if buttons work at all
-app.action('test_action', async ({ body, ack, respond }) => {
+app.action('test_action', async ({ body, ack, client }) => {
     console.log('🧪 TEST ACTION TRIGGERED!');
     await ack();
-    await respond({
-        text: "🎉 TEST SUCCESS! Buttons are working!",
-        response_type: 'ephemeral'
+    await client.chat.postMessage({
+        channel: body.user.id,
+        text: "🎉 TEST SUCCESS! Buttons are working!"
     });
 }); 
