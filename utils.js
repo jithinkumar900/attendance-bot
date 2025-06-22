@@ -926,6 +926,17 @@ class Utils {
                     elements: [
                         {
                             type: "button",
+                            text: { type: "plain_text", text: "🧪 Test Button" },
+                            action_id: "test_action",
+                            style: "danger"
+                        }
+                    ]
+                },
+                {
+                    type: "actions",
+                    elements: [
+                        {
+                            type: "button",
                             text: { type: "plain_text", text: "📅 Weekly Report" },
                             action_id: "report_weekly",
                             style: "primary"

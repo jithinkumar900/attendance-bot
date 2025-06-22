@@ -852,6 +852,7 @@ app.action('admin_actions', async ({ body, ack, respond }) => {
 
 // Report Actions
 app.action('report_weekly', async ({ body, ack, respond }) => {
+    console.log('🔥 WEEKLY REPORT BUTTON CLICKED! Body:', JSON.stringify(body, null, 2));
     await ack();
     try {
         console.log('📊 Weekly report requested');
@@ -911,7 +912,7 @@ app.action('report_weekly', async ({ body, ack, respond }) => {
             });
         }
         
-        console.log('📤 Sending weekly report response');
+        console.log('📤 Sending weekly report response, length:', reportText.length);
         
         await respond({
             text: reportText,
@@ -919,8 +920,11 @@ app.action('report_weekly', async ({ body, ack, respond }) => {
             response_type: 'ephemeral'
         });
         
+        console.log('✅ Weekly report sent successfully');
+        
     } catch (error) {
         console.error('❌ Error in weekly report:', error);
+        console.error('Error stack:', error.stack);
         await respond({ 
             text: `❌ Error generating weekly report: ${error.message}`, 
             response_type: 'ephemeral' 
@@ -929,6 +933,7 @@ app.action('report_weekly', async ({ body, ack, respond }) => {
 });
 
 app.action('report_monthly', async ({ body, ack, respond }) => {
+    console.log('🔥 MONTHLY REPORT BUTTON CLICKED! Body:', JSON.stringify(body, null, 2));
     await ack();
     try {
         console.log('📊 Monthly report requested');
@@ -996,7 +1001,7 @@ app.action('report_monthly', async ({ body, ack, respond }) => {
             });
         }
         
-        console.log('📤 Sending monthly report response');
+        console.log('📤 Sending monthly report response, length:', reportText.length);
         
         await respond({
             text: reportText,
@@ -1004,8 +1009,11 @@ app.action('report_monthly', async ({ body, ack, respond }) => {
             response_type: 'ephemeral'
         });
         
+        console.log('✅ Monthly report sent successfully');
+        
     } catch (error) {
         console.error('❌ Error in monthly report:', error);
+        console.error('Error stack:', error.stack);
         await respond({ 
             text: `❌ Error generating monthly report: ${error.message}`, 
             response_type: 'ephemeral' 
@@ -1743,4 +1751,14 @@ process.on('SIGTERM', () => {
     console.log('\nShutting down bot...');
     db.close();
     process.exit(0);
+});
+
+// Test action to see if buttons work at all
+app.action('test_action', async ({ body, ack, respond }) => {
+    console.log('🧪 TEST ACTION TRIGGERED!');
+    await ack();
+    await respond({
+        text: "🎉 TEST SUCCESS! Buttons are working!",
+        response_type: 'ephemeral'
+    });
 }); 
