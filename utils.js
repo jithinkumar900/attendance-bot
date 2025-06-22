@@ -706,11 +706,6 @@ class Utils {
                         text: { type: "plain_text", text: "🔄 Reset Pending" },
                         action_id: "action_reset_pending",
                         style: "danger"
-                    },
-                    {
-                        type: "button",
-                        text: { type: "plain_text", text: "✅ Approve Time" },
-                        action_id: "action_approve_time"
                     }
                 ]
             }

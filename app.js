@@ -1052,20 +1052,7 @@ app.action('action_reset_pending', async ({ body, ack, respond }) => {
     }
 });
 
-app.action('action_approve_time', async ({ body, ack, respond }) => {
-    await ack();
-    try {
-        await respond({
-            text: "✅ *Approve Exceeded Time*\n\nSelect sessions to approve:",
-            blocks: await getApprovalMenu(),
-            replace_original: false,
-            response_type: 'ephemeral'
-        });
-    } catch (error) {
-        console.error('Error loading approval menu:', error);
-        await respond({ text: "Error loading approval menu.", response_type: 'ephemeral' });
-    }
-});
+
 
 // Reset user pending work
 app.action(/^reset_user_(.+)$/, async ({ body, ack, respond, action }) => {
@@ -1352,59 +1339,7 @@ async function getReminderMenu() {
     ];
 }
 
-async function getApprovalMenu() {
-    // Get recent exceeded sessions
-    const exceededSessions = await new Promise((resolve, reject) => {
-        db.db.all(
-            `SELECT ls.*, u.name as user_name 
-            FROM leave_sessions ls
-            JOIN users u ON ls.user_id = u.id
-            WHERE ls.actual_duration > ls.planned_duration
-            AND ls.end_time IS NOT NULL
-            AND DATE(ls.start_time) >= DATE('now', '-7 days')
-            ORDER BY ls.start_time DESC
-            LIMIT 10`,
-            (err, results) => {
-                if (err) reject(err);
-                else resolve(results || []);
-            }
-        );
-    });
 
-    if (exceededSessions.length === 0) {
-        return [
-            {
-                type: "section",
-                text: {
-                    type: "mrkdwn",
-                    text: "✅ No recent exceeded sessions found."
-                }
-            }
-        ];
-    }
-
-    let text = "Recent sessions that exceeded planned time:\n\n";
-    exceededSessions.forEach((session, index) => {
-        const date = Utils.formatDate(session.date);
-        const planned = Utils.formatDuration(session.planned_duration);
-        const actual = Utils.formatDuration(session.actual_duration);
-        const exceeded = Utils.formatDuration(session.actual_duration - session.planned_duration);
-        
-        text += `${index + 1}. *${session.user_name}* (${date})\n`;
-        text += `   Planned: ${planned}, Actual: ${actual}, Exceeded: ${exceeded}\n`;
-        text += `   Reason: ${session.reason}\n\n`;
-    });
-
-    return [
-        {
-            type: "section",
-            text: {
-                type: "mrkdwn",
-                text
-            }
-        }
-    ];
-}
 
 // Handle unplanned leave modal submission
 app.view('unplanned_leave_modal', async ({ ack, body, client, view }) => {
