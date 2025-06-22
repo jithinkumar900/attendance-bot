@@ -1025,43 +1025,15 @@ app.action('report_monthly', async ({ body, ack, client }) => {
 app.action('action_send_reminders', async ({ body, ack, respond }) => {
     await ack();
     try {
-        const pendingUsers = await new Promise((resolve, reject) => {
-            db.db.all(
-                `SELECT DISTINCT ds.user_id, u.name, SUM(ds.pending_extra_work_minutes) as total_pending
-                FROM daily_summaries ds
-                JOIN users u ON ds.user_id = u.id
-                WHERE ds.pending_extra_work_minutes > 0
-                GROUP BY ds.user_id
-                ORDER BY total_pending DESC`,
-                (err, results) => {
-                    if (err) reject(err);
-                    else resolve(results || []);
-                }
-            );
-        });
-
-        let sentCount = 0;
-        for (const user of pendingUsers) {
-            try {
-                const pendingTime = Utils.formatDuration(user.total_pending);
-                await app.client.chat.postMessage({
-                    channel: user.user_id,
-                    text: `👋 *Friendly Reminder*\n\nHi ${user.name}! You have ${pendingTime} of pending extra work.\n\n🔄 Use \`/work-start\` when you're ready to complete it.\n\nThanks for staying on top of things! 🙏`
-                });
-                sentCount++;
-            } catch (error) {
-                console.error(`Error sending reminder to ${user.name}:`, error);
-            }
-        }
-
         await respond({
-            text: `✅ Sent reminders to ${sentCount} user(s) with pending work.`,
+            text: "📢 *Send Reminders*\n\nSelect users to send reminders to:",
+            blocks: await getReminderMenu(),
             replace_original: false,
             response_type: 'ephemeral'
         });
     } catch (error) {
-        console.error('Error sending reminders:', error);
-        await respond({ text: "Error sending reminders.", response_type: 'ephemeral' });
+        console.error('Error loading reminder menu:', error);
+        await respond({ text: "Error loading reminder menu.", response_type: 'ephemeral' });
     }
 });
 
@@ -1137,6 +1109,110 @@ app.action(/^reset_user_(.+)$/, async ({ body, ack, respond, action }) => {
     }
 });
 
+// Send reminder to specific user
+app.action(/^remind_user_(.+)$/, async ({ body, ack, respond, action }) => {
+    await ack();
+    try {
+        const userId = action.action_id.replace('remind_user_', '');
+        
+        // Get user's pending work
+        const userPending = await new Promise((resolve, reject) => {
+            db.db.get(
+                `SELECT u.name, SUM(ds.pending_extra_work_minutes) as total_pending
+                FROM daily_summaries ds
+                JOIN users u ON ds.user_id = u.id
+                WHERE ds.user_id = ? AND ds.pending_extra_work_minutes > 0
+                GROUP BY ds.user_id`,
+                [userId],
+                (err, result) => {
+                    if (err) reject(err);
+                    else resolve(result);
+                }
+            );
+        });
+
+        if (!userPending) {
+            await respond({
+                text: `❌ User has no pending work to remind about.`,
+                replace_original: false,
+                response_type: 'ephemeral'
+            });
+            return;
+        }
+
+        const pendingTime = Utils.formatDuration(userPending.total_pending);
+        
+        // Send reminder to user
+        await app.client.chat.postMessage({
+            channel: userId,
+            text: `👋 *Friendly Reminder*\n\nHi ${userPending.name}! You have ${pendingTime} of pending extra work.\n\n🔄 Use \`/work-start\` when you're ready to complete it.\n\nThanks for staying on top of things! 🙏`
+        });
+
+        await respond({
+            text: `✅ Sent reminder to *${userPending.name}* (${pendingTime} pending)`,
+            replace_original: false,
+            response_type: 'ephemeral'
+        });
+
+    } catch (error) {
+        console.error('Error sending reminder:', error);
+        await respond({ text: "Error sending reminder.", response_type: 'ephemeral' });
+    }
+});
+
+// Send reminders to all users with pending work
+app.action('remind_all_users', async ({ body, ack, respond }) => {
+    await ack();
+    try {
+        const pendingUsers = await new Promise((resolve, reject) => {
+            db.db.all(
+                `SELECT DISTINCT ds.user_id, u.name, SUM(ds.pending_extra_work_minutes) as total_pending
+                FROM daily_summaries ds
+                JOIN users u ON ds.user_id = u.id
+                WHERE ds.pending_extra_work_minutes > 0
+                GROUP BY ds.user_id
+                ORDER BY total_pending DESC`,
+                (err, results) => {
+                    if (err) reject(err);
+                    else resolve(results || []);
+                }
+            );
+        });
+
+        if (pendingUsers.length === 0) {
+            await respond({
+                text: "✅ No users with pending work found.",
+                replace_original: false,
+                response_type: 'ephemeral'
+            });
+            return;
+        }
+
+        let sentCount = 0;
+        for (const user of pendingUsers) {
+            try {
+                const pendingTime = Utils.formatDuration(user.total_pending);
+                await app.client.chat.postMessage({
+                    channel: user.user_id,
+                    text: `👋 *Friendly Reminder*\n\nHi ${user.name}! You have ${pendingTime} of pending extra work.\n\n🔄 Use \`/work-start\` when you're ready to complete it.\n\nThanks for staying on top of things! 🙏`
+                });
+                sentCount++;
+            } catch (error) {
+                console.error(`Error sending reminder to ${user.name}:`, error);
+            }
+        }
+
+        await respond({
+            text: `✅ Sent reminders to ${sentCount} user(s) with pending work.`,
+            replace_original: false,
+            response_type: 'ephemeral'
+        });
+    } catch (error) {
+        console.error('Error sending reminders to all:', error);
+        await respond({ text: "Error sending reminders to all users.", response_type: 'ephemeral' });
+    }
+});
+
 async function getUserResetMenu() {
     const pendingUsers = await new Promise((resolve, reject) => {
         db.db.all(
@@ -1194,6 +1270,85 @@ async function getUserResetMenu() {
             }
         },
         ...buttonGroups
+    ];
+}
+
+async function getReminderMenu() {
+    const pendingUsers = await new Promise((resolve, reject) => {
+        db.db.all(
+            `SELECT DISTINCT ds.user_id, u.name, SUM(ds.pending_extra_work_minutes) as total_pending
+            FROM daily_summaries ds
+            JOIN users u ON ds.user_id = u.id
+            WHERE ds.pending_extra_work_minutes > 0
+            GROUP BY ds.user_id
+            ORDER BY total_pending DESC
+            LIMIT 10`,
+            (err, results) => {
+                if (err) reject(err);
+                else resolve(results || []);
+            }
+        );
+    });
+
+    if (pendingUsers.length === 0) {
+        return [
+            {
+                type: "section",
+                text: {
+                    type: "mrkdwn",
+                    text: "✅ No users with pending work found."
+                }
+            }
+        ];
+    }
+
+    const userButtons = pendingUsers.map(user => ({
+        type: "button",
+        text: { 
+            type: "plain_text", 
+            text: `📢 ${user.name} (${Utils.formatDuration(user.total_pending)})` 
+        },
+        action_id: `remind_user_${user.user_id}`,
+        style: "primary"
+    }));
+
+    // Split into groups of 5 (Slack limit)
+    const buttonGroups = [];
+    for (let i = 0; i < userButtons.length; i += 5) {
+        buttonGroups.push({
+            type: "actions",
+            elements: userButtons.slice(i, i + 5)
+        });
+    }
+
+    return [
+        {
+            type: "section",
+            text: {
+                type: "mrkdwn",
+                text: "Select a user to send a reminder to:"
+            }
+        },
+        ...buttonGroups,
+        {
+            type: "divider"
+        },
+        {
+            type: "section",
+            text: {
+                type: "mrkdwn",
+                text: `*📊 Found ${pendingUsers.length} user(s) with pending work*`
+            },
+            accessory: {
+                type: "button",
+                text: {
+                    type: "plain_text",
+                    text: "📢 Send to All"
+                },
+                action_id: "remind_all_users",
+                style: "danger"
+            }
+        }
     ];
 }
 
