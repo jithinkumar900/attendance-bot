@@ -272,22 +272,21 @@ app.command('/unplanned', async ({ command, ack, client }) => {
                         {
                             type: 'input',
                             block_id: 'extend_task_escalation',
-                            optional: true,
                             element: {
                                 type: 'plain_text_input',
                                 action_id: 'escalation_input',
                                 multiline: true,
-                                placeholder: { type: 'plain_text', text: 'Optional: Describe the task you are working on and mention who you are assigning it to (e.g., "Working on API integration - escalating to @john.doe")' },
+                                placeholder: { type: 'plain_text', text: 'Describe the task you are working on and mention who you are assigning it to (e.g., "Working on API integration - escalating to @john.doe")' },
                                 max_length: 500
                             },
-                            label: { type: 'plain_text', text: '🔄 Task Escalation (optional)' }
+                            label: { type: 'plain_text', text: '🔄 Task Escalation *' }
                         },
                         {
                             type: 'context',
                             elements: [
                                 {
                                     type: 'mrkdwn',
-                                    text: '💡 *Tip: Use `/return` to end your current session and start fresh*'
+                                    text: '💡 *Tip: Use `/return` to end your current session and start fresh*\n⚠️ *Task escalation is required to ensure proper handoff*'
                                 }
                             ]
                         }
@@ -368,22 +367,21 @@ app.command('/unplanned', async ({ command, ack, client }) => {
                     {
                         type: 'input',
                         block_id: 'task_escalation',
-                        optional: true,
                         element: {
                             type: 'plain_text_input',
                             action_id: 'escalation_input',
                             multiline: true,
-                            placeholder: { type: 'plain_text', text: 'Optional: Describe the task you are working on and mention who you are assigning it to (e.g., "Working on API integration - escalating to @john.doe")' },
+                            placeholder: { type: 'plain_text', text: 'Describe the task you are working on and mention who you are assigning it to (e.g., "Working on API integration - escalating to @john.doe")' },
                             max_length: 500
                         },
-                        label: { type: 'plain_text', text: '🔄 Task Escalation (optional)' }
+                        label: { type: 'plain_text', text: '🔄 Task Escalation *' }
                     },
                     {
                         type: 'context',
                         elements: [
                             {
                                 type: 'mrkdwn',
-                                text: '💡 *This will be posted to #unplanned-leave for transparency*'
+                                text: '💡 *This will be posted to #unplanned-leave for transparency*\n⚠️ *Task escalation is required to ensure proper handoff*'
                             }
                         ]
                     }
@@ -1395,7 +1393,7 @@ app.view('unplanned_leave_modal', async ({ ack, body, client, view }) => {
         // Get reason (optional)
         const reason = values.leave_reason?.reason_input?.value?.trim() || 'Unplanned leave';
         
-        // Get task escalation (optional)
+        // Get task escalation (required)
         const taskEscalation = values.task_escalation?.escalation_input?.value?.trim() || '';
         
         // Calculate total duration in minutes
@@ -1409,6 +1407,16 @@ app.view('unplanned_leave_modal', async ({ ack, body, client, view }) => {
                 errors: {
                     leave_hours: 'Please select at least 15 minutes',
                     leave_minutes: 'Please select at least 15 minutes'
+                }
+            };
+        }
+        
+        // Validate task escalation (required)
+        if (!taskEscalation) {
+            return {
+                response_action: 'errors',
+                errors: {
+                    task_escalation: 'Task escalation is required. Please describe the task and who you are assigning it to.'
                 }
             };
         }
@@ -1502,7 +1510,7 @@ app.view('extend_leave_modal', async ({ ack, body, client, view }) => {
         const addHours = parseInt(values.extend_hours?.hours_select?.selected_option?.value || '0');
         const addMinutes = parseInt(values.extend_minutes?.minutes_select?.selected_option?.value || '0');
         
-        // Get task escalation (optional)
+        // Get task escalation (required)
         const taskEscalation = values.extend_task_escalation?.escalation_input?.value?.trim() || '';
         
         // Calculate additional duration in minutes
@@ -1514,6 +1522,16 @@ app.view('extend_leave_modal', async ({ ack, body, client, view }) => {
                 response_action: 'errors',
                 errors: {
                     extend_minutes: 'Please select at least 15 minutes to extend'
+                }
+            };
+        }
+        
+        // Validate task escalation (required)
+        if (!taskEscalation) {
+            return {
+                response_action: 'errors',
+                errors: {
+                    extend_task_escalation: 'Task escalation is required. Please describe the task and who you are assigning it to.'
                 }
             };
         }
