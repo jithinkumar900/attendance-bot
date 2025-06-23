@@ -384,8 +384,14 @@ class Utils {
     }
 
     // Create leave transparency message
-    static formatLeaveTransparencyMessage(userName, duration, reason, returnTime) {
-        return `🏃‍♂️ *${userName}* is on unplanned leave for *${duration}* (${reason}) - back by *${returnTime}*`;
+    static formatLeaveTransparencyMessage(userName, duration, reason, returnTime, taskEscalation = '') {
+        let message = `🏃‍♂️ *${userName}* is on unplanned leave for *${duration}* (${reason}) - back by *${returnTime}*`;
+        
+        if (taskEscalation) {
+            message += `\n\n🔄 *Task Escalation:* ${taskEscalation}`;
+        }
+        
+        return message;
     }
 
     // Create leave end message

@@ -270,6 +270,19 @@ app.command('/unplanned', async ({ command, ack, client }) => {
                             label: { type: 'plain_text', text: '⏰ Additional Minutes' }
                         },
                         {
+                            type: 'input',
+                            block_id: 'extend_task_escalation',
+                            optional: true,
+                            element: {
+                                type: 'plain_text_input',
+                                action_id: 'escalation_input',
+                                multiline: true,
+                                placeholder: { type: 'plain_text', text: 'Optional: Describe the task you are working on and mention who you are assigning it to (e.g., "Working on API integration - escalating to @john.doe")' },
+                                max_length: 500
+                            },
+                            label: { type: 'plain_text', text: '🔄 Task Escalation (optional)' }
+                        },
+                        {
                             type: 'context',
                             elements: [
                                 {
@@ -351,6 +364,19 @@ app.command('/unplanned', async ({ command, ack, client }) => {
                             max_length: 100
                         },
                         label: { type: 'plain_text', text: '📝 Reason (optional)' }
+                    },
+                    {
+                        type: 'input',
+                        block_id: 'task_escalation',
+                        optional: true,
+                        element: {
+                            type: 'plain_text_input',
+                            action_id: 'escalation_input',
+                            multiline: true,
+                            placeholder: { type: 'plain_text', text: 'Optional: Describe the task you are working on and mention who you are assigning it to (e.g., "Working on API integration - escalating to @john.doe")' },
+                            max_length: 500
+                        },
+                        label: { type: 'plain_text', text: '🔄 Task Escalation (optional)' }
                     },
                     {
                         type: 'context',
@@ -1369,6 +1395,9 @@ app.view('unplanned_leave_modal', async ({ ack, body, client, view }) => {
         // Get reason (optional)
         const reason = values.leave_reason?.reason_input?.value?.trim() || 'Unplanned leave';
         
+        // Get task escalation (optional)
+        const taskEscalation = values.task_escalation?.escalation_input?.value?.trim() || '';
+        
         // Calculate total duration in minutes
         const durationMinutes = (hours * 60) + minutes;
         
@@ -1408,7 +1437,7 @@ app.view('unplanned_leave_modal', async ({ ack, body, client, view }) => {
         await db.startLeaveSession(user_id, durationMinutes, reason);
         
         // Send transparency message to the configured channel (PUBLIC)
-        const message = Utils.formatLeaveTransparencyMessage(userName, formattedDuration, reason, returnTime);
+        const message = Utils.formatLeaveTransparencyMessage(userName, formattedDuration, reason, returnTime, taskEscalation);
         
         await client.chat.postMessage({
             channel: config.bot.transparencyChannel,
@@ -1416,10 +1445,18 @@ app.view('unplanned_leave_modal', async ({ ack, body, client, view }) => {
         });
         
         // Send success message to user (private)
+        let successMessage = `✅ *Leave started successfully!*\n\n⏰ Duration: ${formattedDuration}\n🕐 Expected return: ${returnTime}\n📝 Reason: ${reason}`;
+        
+        if (taskEscalation) {
+            successMessage += `\n🔄 Task Escalation: ${taskEscalation}`;
+        }
+        
+        successMessage += `\n\nPosted to ${config.bot.transparencyChannel} for transparency. 👍`;
+        
         await client.chat.postEphemeral({
             channel: config.bot.transparencyChannel,
             user: user_id,
-            text: `✅ *Leave started successfully!*\n\n⏰ Duration: ${formattedDuration}\n🕐 Expected return: ${returnTime}\n📝 Reason: ${reason}\n\nPosted to ${config.bot.transparencyChannel} for transparency. 👍`
+            text: successMessage
         });
         
         // Optional admin notification (only if channel is configured)
@@ -1465,6 +1502,9 @@ app.view('extend_leave_modal', async ({ ack, body, client, view }) => {
         const addHours = parseInt(values.extend_hours?.hours_select?.selected_option?.value || '0');
         const addMinutes = parseInt(values.extend_minutes?.minutes_select?.selected_option?.value || '0');
         
+        // Get task escalation (optional)
+        const taskEscalation = values.extend_task_escalation?.escalation_input?.value?.trim() || '';
+        
         // Calculate additional duration in minutes
         const additionalDuration = (addHours * 60) + addMinutes;
         
@@ -1503,7 +1543,11 @@ app.view('extend_leave_modal', async ({ ack, body, client, view }) => {
         const newTotalFormatted = Utils.formatDuration(newPlannedDuration);
         
         // Send transparency message about extension
-        const extensionMessage = `⏰ *${userName}* extended leave by *${additionalTimeFormatted}* (new total: *${newTotalFormatted}*, return by *${newReturnTime}*)`;
+        let extensionMessage = `⏰ *${userName}* extended leave by *${additionalTimeFormatted}* (new total: *${newTotalFormatted}*, return by *${newReturnTime}*)`;
+        
+        if (taskEscalation) {
+            extensionMessage += `\n\n🔄 *Task Escalation:* ${taskEscalation}`;
+        }
         
         await client.chat.postMessage({
             channel: config.bot.transparencyChannel,
@@ -1511,10 +1555,18 @@ app.view('extend_leave_modal', async ({ ack, body, client, view }) => {
         });
         
         // Send success message to user (private)
+        let extendSuccessMessage = `✅ *Leave extended successfully!*\n\n➕ Extended by: ${additionalTimeFormatted}\n⏱️ New total duration: ${newTotalFormatted}\n🕐 New expected return: ${newReturnTime}`;
+        
+        if (taskEscalation) {
+            extendSuccessMessage += `\n🔄 Task Escalation: ${taskEscalation}`;
+        }
+        
+        extendSuccessMessage += `\n\nUpdate posted to ${config.bot.transparencyChannel} for transparency. 👍`;
+        
         await client.chat.postEphemeral({
             channel: config.bot.transparencyChannel,
             user: user_id,
-            text: `✅ *Leave extended successfully!*\n\n➕ Extended by: ${additionalTimeFormatted}\n⏱️ New total duration: ${newTotalFormatted}\n🕐 New expected return: ${newReturnTime}\n\nUpdate posted to ${config.bot.transparencyChannel} for transparency. 👍`
+            text: extendSuccessMessage
         });
         
     } catch (error) {
