@@ -14,7 +14,8 @@ const config = {
         extraWorkDeadlineDays: parseInt(process.env.EXTRA_WORK_DEADLINE_DAYS) || 7,
         adminPassword: process.env.ADMIN_PASSWORD || 'admin123',
         transparencyChannel: process.env.TRANSPARENCY_CHANNEL || '#unplanned-leave',
-        halfDayFormUrl: process.env.HALF_DAY_FORM_URL || 'https://forms.google.com/your-half-day-form-link'
+        halfDayFormUrl: process.env.HALF_DAY_FORM_URL || 'https://forms.google.com/your-half-day-form-link',
+        plannedLeaveFormUrl: process.env.PLANNED_LEAVE_FORM_URL || 'https://forms.google.com/your-planned-leave-form-link'
     },
     notifications: {
         // Optional notification channel - only used for important admin notifications
@@ -1824,7 +1825,9 @@ app.view('planned_leave_modal', async ({ ack, body, client, view }) => {
         successMessage += `📋 *Type:* ${Utils.formatLeaveType(leaveType)}\n`;
         successMessage += `📝 *Reason:* ${reason}\n`;
         successMessage += `🔄 *Task Escalation:* ${taskEscalation}\n`;
-        successMessage += `\nPosted to ${config.bot.transparencyChannel} for transparency. 👍`;
+        successMessage += `\nPosted to ${config.bot.transparencyChannel} for transparency. 👍\n\n`;
+        successMessage += `📋 *Next Step: Complete the official leave form*\n`;
+        successMessage += `${config.bot.plannedLeaveFormUrl}`;
         
         await client.chat.postEphemeral({
             channel: config.bot.transparencyChannel,
@@ -2142,6 +2145,7 @@ cron.schedule('30 3 * * 1', async () => {
         console.log(`  • Admin notifications: ${config.notifications.notifyChannel ? '✅ ' + config.notifications.notifyChannel : '❌ Disabled'}`);
         console.log(`  • Admin password set: ${config.bot.adminPassword ? '✅' : '❌'}`);
         console.log(`  • Half-day form: ${config.bot.halfDayFormUrl}`);
+        console.log(`  • Planned leave form: ${config.bot.plannedLeaveFormUrl}`);
         console.log(`  • Keepalive: ${RENDER_URL ? '✅ Enabled' : '❌ Disabled (add RENDER_URL env var)'}`);
         console.log('🚀 Available commands:');
         console.log('  /unplanned <duration> <reason> - Start unplanned leave');
