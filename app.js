@@ -14,7 +14,8 @@ const config = {
         extraWorkDeadlineDays: parseInt(process.env.EXTRA_WORK_DEADLINE_DAYS) || 7,
         adminPassword: process.env.ADMIN_PASSWORD || 'admin123',
         transparencyChannel: process.env.TRANSPARENCY_CHANNEL || '#unplanned-leave',
-        halfDayFormUrl: process.env.HALF_DAY_FORM_URL || 'https://forms.google.com/your-half-day-form-link'
+        halfDayFormUrl: process.env.HALF_DAY_FORM_URL || 'https://forms.google.com/your-half-day-form-link',
+        plannedLeaveChannel: process.env.PLANNED_LEAVE_CHANNEL || '#planned-leave'
     },
     notifications: {
         // Optional notification channel - only used for important admin notifications
@@ -239,7 +240,7 @@ app.command('/unplanned', async ({ command, ack, client }) => {
                             block_id: 'extend_hours',
                             element: {
                                 type: 'static_select',
-                                placeholder: { type: 'plain_text', text: 'Additional hours' },
+                                placeholder: { type: 'plain_text', text: 'Select additional hours' },
                                 action_id: 'hours_select',
                                 options: [
                                     { text: { type: 'plain_text', text: '0 hours' }, value: '0' },
@@ -250,14 +251,14 @@ app.command('/unplanned', async ({ command, ack, client }) => {
                                 ],
                                 initial_option: { text: { type: 'plain_text', text: '0 hours' }, value: '0' }
                             },
-                            label: { type: 'plain_text', text: '➕ Additional Hours' }
+                            label: { type: 'plain_text', text: '🕐 Additional Hours' }
                         },
                         {
                             type: 'input',
                             block_id: 'extend_minutes',
                             element: {
                                 type: 'static_select',
-                                placeholder: { type: 'plain_text', text: 'Additional minutes' },
+                                placeholder: { type: 'plain_text', text: 'Select additional minutes' },
                                 action_id: 'minutes_select',
                                 options: [
                                     { text: { type: 'plain_text', text: '0 minutes' }, value: '0' },
@@ -394,6 +395,131 @@ app.command('/unplanned', async ({ command, ack, client }) => {
         
         // Provide helpful error message based on the type of error
         let errorMessage = "Sorry, there was an error opening the leave form.";
+        
+        if (error.message && error.message.includes('timeout')) {
+            errorMessage += " The service may be warming up. Please wait 10 seconds and try again.";
+        } else if (!connectionWarmed) {
+            errorMessage += " Connection is being established. Please try again in a moment.";
+        } else {
+            errorMessage += " Please try again.";
+        }
+        
+        await client.chat.postEphemeral({
+            channel: command.channel_id,
+            user: command.user_id,
+            text: errorMessage
+        });
+    }
+});
+
+// Start planned leave - Interactive Modal
+app.command('/planned', async ({ command, ack, client }) => {
+    await ack();
+    
+    // Update activity and ensure service is warmed up
+    updateActivity();
+    await warmupService();
+    
+    try {
+        const { user_id, trigger_id } = command;
+
+        // Open interactive modal for planned leave
+        await client.views.open({
+            trigger_id,
+            view: {
+                type: 'modal',
+                callback_id: 'planned_leave_modal',
+                title: { type: 'plain_text', text: 'Request Planned Leave' },
+                submit: { type: 'plain_text', text: 'Submit Request' },
+                close: { type: 'plain_text', text: 'Cancel' },
+                blocks: [
+                    {
+                        type: 'section',
+                        text: {
+                            type: 'mrkdwn',
+                            text: '📅 *Plan your leave in advance*\n\nFill out the details below to request planned leave:'
+                        }
+                    },
+                    {
+                        type: 'input',
+                        block_id: 'leave_type',
+                        element: {
+                            type: 'static_select',
+                            placeholder: { type: 'plain_text', text: 'Select leave type' },
+                            action_id: 'type_select',
+                            options: [
+                                { text: { type: 'plain_text', text: 'Full Day' }, value: 'full_day' },
+                                { text: { type: 'plain_text', text: 'Half Day (Morning)' }, value: 'half_day_morning' },
+                                { text: { type: 'plain_text', text: 'Half Day (Afternoon)' }, value: 'half_day_afternoon' },
+                                { text: { type: 'plain_text', text: 'Custom Hours' }, value: 'custom_hours' }
+                            ],
+                            initial_option: { text: { type: 'plain_text', text: 'Full Day' }, value: 'full_day' }
+                        },
+                        label: { type: 'plain_text', text: '📋 Leave Type' }
+                    },
+                    {
+                        type: 'input',
+                        block_id: 'start_date',
+                        element: {
+                            type: 'datepicker',
+                            action_id: 'start_date_select',
+                            placeholder: { type: 'plain_text', text: 'Select start date' },
+                            initial_date: Utils.getTomorrowDate()
+                        },
+                        label: { type: 'plain_text', text: '📅 Start Date' }
+                    },
+                    {
+                        type: 'input',
+                        block_id: 'end_date',
+                        element: {
+                            type: 'datepicker',
+                            action_id: 'end_date_select',
+                            placeholder: { type: 'plain_text', text: 'Select end date' },
+                            initial_date: Utils.getTomorrowDate()
+                        },
+                        label: { type: 'plain_text', text: '📅 End Date' }
+                    },
+                    {
+                        type: 'input',
+                        block_id: 'leave_reason',
+                        element: {
+                            type: 'plain_text_input',
+                            action_id: 'reason_input',
+                            placeholder: { type: 'plain_text', text: 'e.g., Vacation, Medical appointment, Personal matters' },
+                            max_length: 200
+                        },
+                        label: { type: 'plain_text', text: '📝 Reason' }
+                    },
+                    {
+                        type: 'input',
+                        block_id: 'task_escalation',
+                        element: {
+                            type: 'plain_text_input',
+                            action_id: 'escalation_input',
+                            multiline: true,
+                            placeholder: { type: 'plain_text', text: 'Describe the tasks you are working on and mention who you are assigning them to (e.g., "Project X - escalating to @john.doe, Client meeting - @jane.smith will handle")' },
+                            max_length: 500
+                        },
+                        label: { type: 'plain_text', text: '🔄 Task Escalation *' }
+                    },
+                    {
+                        type: 'context',
+                        elements: [
+                            {
+                                type: 'mrkdwn',
+                                text: '💡 *This will be posted to #planned-leave for transparency*\n⚠️ *Task escalation is required to ensure proper handoff*'
+                            }
+                        ]
+                    }
+                ]
+            }
+        });
+
+    } catch (error) {
+        console.error('Error in planned modal:', error);
+        
+        // Provide helpful error message based on the type of error
+        let errorMessage = "Sorry, there was an error opening the planned leave form.";
         
         if (error.message && error.message.includes('timeout')) {
             errorMessage += " The service may be warming up. Please wait 10 seconds and try again.";
@@ -1599,6 +1725,139 @@ app.view('extend_leave_modal', async ({ ack, body, client, view }) => {
     }
 });
 
+// Handle planned leave modal submission
+app.view('planned_leave_modal', async ({ ack, body, client, view }) => {
+    await ack();
+    
+    try {
+        const user_id = body.user.id;
+        
+        // Extract values from the modal
+        const values = view.state.values;
+        
+        // Get form values
+        const leaveType = values.leave_type?.type_select?.selected_option?.value || 'full_day';
+        const startDate = values.start_date?.start_date_select?.selected_date;
+        const endDate = values.end_date?.end_date_select?.selected_date;
+        const reason = values.leave_reason?.reason_input?.value?.trim() || '';
+        const taskEscalation = values.task_escalation?.escalation_input?.value?.trim() || '';
+        
+        // Validate required fields
+        if (!startDate || !endDate) {
+            return {
+                response_action: 'errors',
+                errors: {
+                    start_date: !startDate ? 'Please select a start date' : '',
+                    end_date: !endDate ? 'Please select an end date' : ''
+                }
+            };
+        }
+        
+        if (!reason) {
+            return {
+                response_action: 'errors',
+                errors: {
+                    leave_reason: 'Please provide a reason for your leave'
+                }
+            };
+        }
+        
+        if (!taskEscalation) {
+            return {
+                response_action: 'errors',
+                errors: {
+                    task_escalation: 'Task escalation is required. Please describe the tasks and who you are assigning them to.'
+                }
+            };
+        }
+        
+        // Validate date range
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        if (start < today) {
+            return {
+                response_action: 'errors',
+                errors: {
+                    start_date: 'Start date must be today or in the future'
+                }
+            };
+        }
+        
+        if (end < start) {
+            return {
+                response_action: 'errors',
+                errors: {
+                    end_date: 'End date must be after or equal to start date'
+                }
+            };
+        }
+        
+        // Get user info
+        const userInfo = await client.users.info({ user: user_id });
+        const userName = userInfo.user.real_name || userInfo.user.name;
+        
+        // Create user in database if not exists
+        await db.createUser(user_id, userName, userInfo.user.profile?.email);
+        
+        // Format dates for display
+        const formattedStartDate = Utils.formatDate(startDate);
+        const formattedEndDate = Utils.formatDate(endDate);
+        const dateRange = startDate === endDate ? formattedStartDate : `${formattedStartDate} - ${formattedEndDate}`;
+        
+        // Calculate duration in days
+        const timeDiff = end.getTime() - start.getTime();
+        const daysDiff = Math.ceil(timeDiff / (1000 * 3600 * 24)) + 1; // +1 to include both start and end dates
+        
+        // Send planned leave message to transparency channel
+        const plannedLeaveChannel = config.bot.plannedLeaveChannel || config.bot.transparencyChannel;
+        const message = Utils.formatPlannedLeaveMessage(userName, leaveType, dateRange, daysDiff, reason, taskEscalation);
+        
+        await client.chat.postMessage({
+            channel: plannedLeaveChannel,
+            text: message
+        });
+        
+        // Send success message to user (private)
+        let successMessage = `✅ *Planned leave request submitted successfully!*\n\n`;
+        successMessage += `📅 *Dates:* ${dateRange}\n`;
+        successMessage += `📋 *Type:* ${Utils.formatLeaveType(leaveType)}\n`;
+        successMessage += `📝 *Reason:* ${reason}\n`;
+        successMessage += `🔄 *Task Escalation:* ${taskEscalation}\n`;
+        successMessage += `\nPosted to ${plannedLeaveChannel} for transparency. 👍`;
+        
+        await client.chat.postEphemeral({
+            channel: plannedLeaveChannel,
+            user: user_id,
+            text: successMessage
+        });
+        
+        // Optional admin notification
+        if (config.notifications.notifyChannel) {
+            try {
+                await client.chat.postMessage({
+                    channel: config.notifications.notifyChannel,
+                    text: `📋 Planned leave request: ${userName} (${dateRange})`
+                });
+            } catch (error) {
+                console.error(`Failed to notify admin channel:`, error);
+            }
+        }
+        
+    } catch (error) {
+        console.error('Error processing planned leave modal:', error);
+        
+        // Send error message to user
+        await client.chat.postEphemeral({
+            channel: config.bot.transparencyChannel,
+            user: body.user.id,
+            text: "❌ Sorry, there was an error submitting your planned leave request. Please try again."
+        });
+    }
+});
+
 // User drill-down actions
 app.action(/^user_details_(.+)$/, async ({ body, ack, respond, action }) => {
     await ack();
@@ -1882,12 +2141,14 @@ cron.schedule('30 3 * * 1', async () => {
         console.log('📍 Configuration:');
         console.log(`  • Max unplanned hours: ${config.bot.maxUnplannedHours}h`);
         console.log(`  • Transparency channel: ${config.bot.transparencyChannel}`);
+        console.log(`  • Planned leave channel: ${config.bot.plannedLeaveChannel}`);
         console.log(`  • Admin notifications: ${config.notifications.notifyChannel ? '✅ ' + config.notifications.notifyChannel : '❌ Disabled'}`);
         console.log(`  • Admin password set: ${config.bot.adminPassword ? '✅' : '❌'}`);
         console.log(`  • Half-day form: ${config.bot.halfDayFormUrl}`);
         console.log(`  • Keepalive: ${RENDER_URL ? '✅ Enabled' : '❌ Disabled (add RENDER_URL env var)'}`);
         console.log('🚀 Available commands:');
         console.log('  /unplanned <duration> <reason> - Start unplanned leave');
+        console.log('  /planned - Request planned leave');
         console.log('  /return - End current leave');
         console.log('  /work-start [reason] - Start extra work session');
         console.log('  /work-end - End extra work session');

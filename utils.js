@@ -61,7 +61,14 @@ class Utils {
 
     // Get current date in YYYY-MM-DD format
     static getCurrentDate() {
-        return moment().tz('Asia/Kolkata').format('YYYY-MM-DD');
+        return new Date().toISOString().split('T')[0];
+    }
+
+    // Get tomorrow's date in YYYY-MM-DD format
+    static getTomorrowDate() {
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        return tomorrow.toISOString().split('T')[0];
     }
 
     // Get current time in ISO format
@@ -392,6 +399,45 @@ class Utils {
         }
         
         return message;
+    }
+
+    // Create planned leave transparency message
+    static formatPlannedLeaveMessage(userName, leaveType, dateRange, daysDiff, reason, taskEscalation = '') {
+        let message = `📅 *${userName}* has requested planned leave`;
+        
+        message += `\n• *Type:* ${this.formatLeaveType(leaveType)}`;
+        message += `\n• *Dates:* ${dateRange}`;
+        if (daysDiff > 1) {
+            message += ` (${daysDiff} days)`;
+        }
+        message += `\n• *Reason:* ${reason}`;
+        
+        if (taskEscalation) {
+            message += `\n\n🔄 *Task Escalation:* ${taskEscalation}`;
+        }
+        
+        return message;
+    }
+
+    // Format leave type for display
+    static formatLeaveType(leaveType) {
+        const types = {
+            'full_day': 'Full Day',
+            'half_day_morning': 'Half Day (Morning)',
+            'half_day_afternoon': 'Half Day (Afternoon)',
+            'custom_hours': 'Custom Hours'
+        };
+        return types[leaveType] || 'Full Day';
+    }
+
+    // Format date for display (DD/MM/YYYY)
+    static formatDate(dateStr) {
+        const date = new Date(dateStr);
+        return date.toLocaleDateString('en-GB', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric'
+        });
     }
 
     // Create leave end message

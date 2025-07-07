@@ -5,6 +5,7 @@
     "extraWorkDeadlineDays": 7,
     "adminPassword": "admin123",
     "transparencyChannel": "#unplanned-leave",
+    "plannedLeaveChannel": "#planned-leave",
     "halfDayFormUrl": "https://forms.google.com/your-half-day-form-link"
   },
   "notifications": {
@@ -23,6 +24,7 @@
     "adminReportHeader": "📈 **ADMIN REPORT - {date}**\n{'='*40}",
     "usage": {
       "unplanned": "Use: `/unplanned 1.5h doctor appointment`",
+      "planned": "Use: `/planned` to request planned leave",
       "return": "Use: `/return` to end your current leave",
       "workStart": "Use: `/work-start` to begin extra work session",
       "workEnd": "Use: `/work-end` to finish extra work",
