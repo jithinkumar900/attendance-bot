@@ -1824,15 +1824,18 @@ app.view('planned_leave_modal', async ({ ack, body, client, view }) => {
         successMessage += `📅 *Dates:* ${dateRange}\n`;
         successMessage += `📋 *Type:* ${Utils.formatLeaveType(leaveType)}\n`;
         successMessage += `📝 *Reason:* ${reason}\n`;
-        successMessage += `🔄 *Task Escalation:* ${taskEscalation}\n`;
-        successMessage += `\nPosted to ${config.bot.transparencyChannel} for transparency. 👍\n\n`;
-        successMessage += `📋 *Next Step: Complete the official leave form*\n`;
-        successMessage += `${config.bot.plannedLeaveFormUrl}`;
+        successMessage += `🔄 *Task Escalation:* ${taskEscalation}`;
         
         await client.chat.postEphemeral({
             channel: config.bot.transparencyChannel,
             user: user_id,
             text: successMessage
+        });
+        
+        // Send form link as DM
+        await client.chat.postMessage({
+            channel: user_id,
+            text: `📋 *Complete Your Official Leave Request*\n\nPlease fill out the official leave form to finalize your request:\n\n${config.bot.plannedLeaveFormUrl}\n\nThank you! 👍`
         });
         
         // Optional admin notification
