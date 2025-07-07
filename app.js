@@ -497,7 +497,7 @@ app.command('/planned', async ({ command, ack, client }) => {
                             type: 'plain_text_input',
                             action_id: 'escalation_input',
                             multiline: true,
-                            placeholder: { type: 'plain_text', text: 'Describe the tasks you are working on and mention who you are assigning them to (e.g., "Project X - escalating to @john.doe, Client meeting - @jane.smith will handle")' },
+                            placeholder: { type: 'plain_text', text: 'Describe tasks and who you are assigning them to (e.g., "Project X - @john.doe, Client meeting - @jane.smith")' },
                             max_length: 500
                         },
                         label: { type: 'plain_text', text: '🔄 Task Escalation *' }
