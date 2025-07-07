@@ -14,8 +14,7 @@ const config = {
         extraWorkDeadlineDays: parseInt(process.env.EXTRA_WORK_DEADLINE_DAYS) || 7,
         adminPassword: process.env.ADMIN_PASSWORD || 'admin123',
         transparencyChannel: process.env.TRANSPARENCY_CHANNEL || '#unplanned-leave',
-        halfDayFormUrl: process.env.HALF_DAY_FORM_URL || 'https://forms.google.com/your-half-day-form-link',
-        plannedLeaveChannel: process.env.PLANNED_LEAVE_CHANNEL || '#planned-leave'
+        halfDayFormUrl: process.env.HALF_DAY_FORM_URL || 'https://forms.google.com/your-half-day-form-link'
     },
     notifications: {
         // Optional notification channel - only used for important admin notifications
@@ -507,7 +506,7 @@ app.command('/planned', async ({ command, ack, client }) => {
                         elements: [
                             {
                                 type: 'mrkdwn',
-                                text: '💡 *This will be posted to #planned-leave for transparency*\n⚠️ *Task escalation is required to ensure proper handoff*'
+                                text: '⚠️ *Task escalation is required to ensure proper handoff*'
                             }
                         ]
                     }
@@ -1811,12 +1810,11 @@ app.view('planned_leave_modal', async ({ ack, body, client, view }) => {
         const timeDiff = end.getTime() - start.getTime();
         const daysDiff = Math.ceil(timeDiff / (1000 * 3600 * 24)) + 1; // +1 to include both start and end dates
         
-        // Send planned leave message to transparency channel
-        const plannedLeaveChannel = config.bot.plannedLeaveChannel || config.bot.transparencyChannel;
+        // Send planned leave message to transparency channel (same channel for both types)
         const message = Utils.formatPlannedLeaveMessage(userName, leaveType, dateRange, daysDiff, reason, taskEscalation);
         
         await client.chat.postMessage({
-            channel: plannedLeaveChannel,
+            channel: config.bot.transparencyChannel,
             text: message
         });
         
@@ -1826,10 +1824,10 @@ app.view('planned_leave_modal', async ({ ack, body, client, view }) => {
         successMessage += `📋 *Type:* ${Utils.formatLeaveType(leaveType)}\n`;
         successMessage += `📝 *Reason:* ${reason}\n`;
         successMessage += `🔄 *Task Escalation:* ${taskEscalation}\n`;
-        successMessage += `\nPosted to ${plannedLeaveChannel} for transparency. 👍`;
+        successMessage += `\nPosted to ${config.bot.transparencyChannel} for transparency. 👍`;
         
         await client.chat.postEphemeral({
-            channel: plannedLeaveChannel,
+            channel: config.bot.transparencyChannel,
             user: user_id,
             text: successMessage
         });
@@ -2141,7 +2139,6 @@ cron.schedule('30 3 * * 1', async () => {
         console.log('📍 Configuration:');
         console.log(`  • Max unplanned hours: ${config.bot.maxUnplannedHours}h`);
         console.log(`  • Transparency channel: ${config.bot.transparencyChannel}`);
-        console.log(`  • Planned leave channel: ${config.bot.plannedLeaveChannel}`);
         console.log(`  • Admin notifications: ${config.notifications.notifyChannel ? '✅ ' + config.notifications.notifyChannel : '❌ Disabled'}`);
         console.log(`  • Admin password set: ${config.bot.adminPassword ? '✅' : '❌'}`);
         console.log(`  • Half-day form: ${config.bot.halfDayFormUrl}`);

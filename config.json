@@ -5,7 +5,6 @@
     "extraWorkDeadlineDays": 7,
     "adminPassword": "admin123",
     "transparencyChannel": "#unplanned-leave",
-    "plannedLeaveChannel": "#planned-leave",
     "halfDayFormUrl": "https://forms.google.com/your-half-day-form-link"
   },
   "notifications": {
