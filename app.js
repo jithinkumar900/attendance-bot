@@ -324,7 +324,7 @@ app.command('/intermediate_logout', async ({ command, ack, client }) => {
             view: {
                 type: 'modal',
                 callback_id: 'intermediate_logout_modal',
-                title: { type: 'plain_text', text: 'Start Intermediate Logout' },
+                title: { type: 'plain_text', text: 'Intermediate Logout' },
                 submit: { type: 'plain_text', text: 'Start Leave' },
                 close: { type: 'plain_text', text: 'Cancel' },
                 blocks: [
