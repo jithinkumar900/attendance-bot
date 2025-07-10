@@ -57,18 +57,38 @@ class Database {
             )`
         ];
 
+        let completedQueries = 0;
+        const totalQueries = queries.length;
+
         queries.forEach(query => {
             this.db.run(query, (err) => {
                 if (err) console.error('Database initialization error:', err);
+                
+                completedQueries++;
+                
+                // Only run migration after all tables are created
+                if (completedQueries === totalQueries) {
+                    this.runMigrations();
+                }
             });
         });
+    }
 
+    runMigrations() {
         // Migration: Add work_description column if it doesn't exist
+        // This migration is safe to run multiple times due to error checking
         this.db.run(
             `ALTER TABLE extra_work_sessions ADD COLUMN work_description TEXT`,
             (err) => {
-                if (err && !err.message.includes('duplicate column name')) {
-                    console.error('Migration error:', err);
+                if (err) {
+                    // This is expected if the column already exists
+                    if (err.message.includes('duplicate column name')) {
+                        console.log('✅ Migration: work_description column already exists');
+                    } else {
+                        console.error('Migration error:', err);
+                    }
+                } else {
+                    console.log('✅ Migration: Added work_description column to extra_work_sessions');
                 }
             }
         );

@@ -1,10 +1,10 @@
 {
   "bot": {
-    "maxUnplannedHours": 2.5,
+    "maxIntermediateHours": 2.5,
     "workingHoursPerDay": 8,
     "extraWorkDeadlineDays": 7,
     "adminPassword": "admin123",
-    "transparencyChannel": "#unplanned-leave",
+    "transparencyChannel": "#intermediate-logout",
     "halfDayFormUrl": "https://forms.google.com/your-half-day-form-link",
     "plannedLeaveFormUrl": "https://forms.google.com/your-planned-leave-form-link"
   },
@@ -16,14 +16,14 @@
     "weeklyReminders": true
   },
   "messages": {
-    "leaveStarted": "🏃‍♂️ **{user}** is on unplanned leave for **{duration}** ({reason}) - back by **{returnTime}**",
-    "leaveEnded": "✅ **{user}** returned from leave (actual time: **{actualDuration}**)",
-    "halfDayTrigger": "⚠️ Your total unplanned leave today ({totalTime}) exceeds 2.5h. Please fill the half-day form: {formUrl}",
-    "dailySummary": "📊 **Daily Summary for {user}**\n• Unplanned leave: {leaveTime}\n• Extra work needed: {extraWork}\n• Deadline: {deadline}",
+    "leaveStarted": "🏃‍♂️ **{user}** is on intermediate logout for **{duration}** ({reason}) - back by **{returnTime}**",
+    "leaveEnded": "✅ **{user}** returned from intermediate logout (actual time: **{actualDuration}**)",
+    "halfDayTrigger": "⚠️ Your total intermediate logout today ({totalTime}) exceeds 2.5h. Please fill the half-day form: {formUrl}",
+    "dailySummary": "📊 **Daily Summary for {user}**\n• Intermediate logout: {leaveTime}\n• Extra work needed: {extraWork}\n• Deadline: {deadline}",
     "extraWorkPrompt": "⏰ You've been working extra for {duration}. Still working? React with ✅ to continue or ❌ to stop.",
     "adminReportHeader": "📈 **ADMIN REPORT - {date}**\n{'='*40}",
     "usage": {
-      "unplanned": "Use: `/unplanned 1.5h doctor appointment`",
+      "intermediateLogout": "Use: `/intermediate-logout 1.5h doctor appointment`",
       "planned": "Use: `/planned` to request planned leave",
       "return": "Use: `/return` to end your current leave",
       "workStart": "Use: `/work-start` to begin extra work session",
