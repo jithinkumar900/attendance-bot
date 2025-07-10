@@ -62,7 +62,7 @@ cp .env.example .env
    - `app_mentions:read`
    - `commands`
 4. **Slash Commands**: Create these commands:
-   - `/intermediate-logout`
+   - `/intermediate_logout`
    - `/return`
    - `/work-start`
    - `/work-end`
@@ -110,9 +110,9 @@ npm start
 
 #### Starting Intermediate Logout
 ```
-/intermediate-logout 1.5h doctor appointment
-/intermediate-logout 30m bank work
-/intermediate-logout 2h personal work
+/intermediate_logout 1.5h doctor appointment
+/intermediate_logout 30m bank work
+/intermediate_logout 2h personal work
 ```
 
 #### Ending Leave
@@ -142,7 +142,7 @@ npm start
 ## 🔄 Automated Workflows
 
 ### Daily Flow
-1. **Leave Start**: Employee uses `/intermediate-logout 1h dentist`
+1. **Leave Start**: Employee uses `/intermediate_logout 1h dentist`
 2. **Public Notification**: "John is on leave for 1h (dentist) - back by 2:30 PM"
 3. **Leave End**: Employee uses `/return` or auto-detected
 4. **Time Check**: If total > 2.5h → Half-day form sent

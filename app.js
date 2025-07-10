@@ -220,8 +220,8 @@ cron.schedule('* * * * *', async () => {
 // ================================
 
 // Start intermediate logout - Interactive Modal
-app.command('/intermediate-logout', async ({ command, ack, client }) => {
-    console.log('🔥 DEBUG: /intermediate-logout command received!', { user_id: command.user_id, text: command.text });
+app.command('/intermediate_logout', async ({ command, ack, client }) => {
+    console.log('🔥 DEBUG: /intermediate_logout command received!', { user_id: command.user_id, text: command.text });
     await ack();
     
     // Update activity and ensure service is warmed up
@@ -2435,7 +2435,7 @@ cron.schedule('30 3 * * 1', async () => {
         console.log(`  • Planned leave form: ${config.bot.plannedLeaveFormUrl}`);
         console.log(`  • Keepalive: ${RENDER_URL ? '✅ Enabled' : '❌ Disabled (add RENDER_URL env var)'}`);
         console.log('🚀 Available commands:');
-        console.log('  /intermediate-logout <duration> <reason> - Start intermediate logout');
+        console.log('  /intermediate_logout <duration> <reason> - Start intermediate logout');
         console.log('  /planned - Request planned leave');
         console.log('  /return - End current leave');
         console.log('  /work-start [reason] - Start extra work session');
