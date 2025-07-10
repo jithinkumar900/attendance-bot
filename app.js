@@ -221,6 +221,7 @@ cron.schedule('* * * * *', async () => {
 
 // Start intermediate logout - Interactive Modal
 app.command('/intermediate-logout', async ({ command, ack, client }) => {
+    console.log('🔥 DEBUG: /intermediate-logout command received!', { user_id: command.user_id, text: command.text });
     await ack();
     
     // Update activity and ensure service is warmed up
@@ -322,8 +323,8 @@ app.command('/intermediate-logout', async ({ command, ack, client }) => {
             trigger_id,
             view: {
                 type: 'modal',
-                            callback_id: 'intermediate_logout_modal',
-            title: { type: 'plain_text', text: 'Start Intermediate Logout' },
+                callback_id: 'intermediate_logout_modal',
+                title: { type: 'plain_text', text: 'Start Intermediate Logout' },
                 submit: { type: 'plain_text', text: 'Start Leave' },
                 close: { type: 'plain_text', text: 'Cancel' },
                 blocks: [
