@@ -221,7 +221,6 @@ cron.schedule('* * * * *', async () => {
 
 // Start intermediate logout - Interactive Modal
 app.command('/intermediate_logout', async ({ command, ack, client }) => {
-    console.log('🔥 DEBUG: /intermediate_logout command received!', { user_id: command.user_id, text: command.text });
     await ack();
     
     // Update activity and ensure service is warmed up
