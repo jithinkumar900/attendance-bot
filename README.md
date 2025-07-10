@@ -1,6 +1,6 @@
 # Attendance Bot 🤖
 
-A comprehensive Slack bot for tracking unplanned leave and managing extra work hours with full transparency and automated notifications.
+A comprehensive Slack bot for tracking intermediate logout and managing extra work hours with full transparency and automated notifications.
 
 ## ✨ Features
 
@@ -62,7 +62,7 @@ cp .env.example .env
    - `app_mentions:read`
    - `commands`
 4. **Slash Commands**: Create these commands:
-   - `/unplanned`
+   - `/intermediate-logout`
    - `/return`
    - `/work-start`
    - `/work-end`
@@ -82,9 +82,9 @@ SLACK_APP_TOKEN=xapp-your-app-token
 ```json
 {
   "bot": {
-    "maxUnplannedHours": 2.5,
+    "maxIntermediateHours": 2.5,
     "adminPassword": "your-secure-password",
-    "transparencyChannel": "#unplanned-leave",
+    "transparencyChannel": "#intermediate-logout",
     "halfDayFormUrl": "https://forms.google.com/your-form"
   },
   "notifications": {
@@ -108,11 +108,11 @@ npm start
 
 ### For Employees
 
-#### Starting Unplanned Leave
+#### Starting Intermediate Logout
 ```
-/unplanned 1.5h doctor appointment
-/unplanned 30m bank work
-/unplanned 2h personal work
+/intermediate-logout 1.5h doctor appointment
+/intermediate-logout 30m bank work
+/intermediate-logout 2h personal work
 ```
 
 #### Ending Leave
@@ -142,7 +142,7 @@ npm start
 ## 🔄 Automated Workflows
 
 ### Daily Flow
-1. **Leave Start**: Employee uses `/unplanned 1h dentist`
+1. **Leave Start**: Employee uses `/intermediate-logout 1h dentist`
 2. **Public Notification**: "John is on leave for 1h (dentist) - back by 2:30 PM"
 3. **Leave End**: Employee uses `/return` or auto-detected
 4. **Time Check**: If total > 2.5h → Half-day form sent
@@ -199,7 +199,7 @@ Edit `config.json` to customize all bot messages:
 ```json
 {
   "bot": {
-    "maxUnplannedHours": 2.5,
+    "maxIntermediateHours": 2.5,
     "workingHoursPerDay": 8,
     "extraWorkDeadlineDays": 7
   }

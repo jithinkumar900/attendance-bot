@@ -9,11 +9,11 @@ const Utils = require('./utils');
 // Configuration from environment variables (fallback to defaults)
 const config = {
     bot: {
-        maxUnplannedHours: parseFloat(process.env.MAX_UNPLANNED_HOURS) || 2.5,
+        maxIntermediateHours: parseFloat(process.env.MAX_INTERMEDIATE_HOURS) || 2.5,
         workingHoursPerDay: parseFloat(process.env.WORKING_HOURS_PER_DAY) || 8,
         extraWorkDeadlineDays: parseInt(process.env.EXTRA_WORK_DEADLINE_DAYS) || 7,
         adminPassword: process.env.ADMIN_PASSWORD || 'admin123',
-        transparencyChannel: process.env.TRANSPARENCY_CHANNEL || '#unplanned-leave',
+        transparencyChannel: process.env.TRANSPARENCY_CHANNEL || '#intermediate-logout',
         halfDayFormUrl: process.env.HALF_DAY_FORM_URL || 'https://forms.google.com/your-half-day-form-link',
         plannedLeaveFormUrl: process.env.PLANNED_LEAVE_FORM_URL || 'https://forms.google.com/your-planned-leave-form-link'
     },
@@ -169,24 +169,44 @@ cron.schedule('* * * * *', async () => {
             const today = Utils.getCurrentDate();
             const summary = await db.getUserDailySummary(session.user_id, today);
             
-            // Auto-complete if worked enough time
+            // Notify user that they can complete their session (require description)
             if (summary && currentDuration >= summary.pending_extra_work_minutes) {
                 try {
-                    const completedSession = await db.endExtraWorkSession(session.user_id);
-                    const duration = Utils.formatDuration(completedSession.duration);
+                    const duration = Utils.formatDuration(currentDuration);
 
-                    // Update daily summary
-                    await db.updateDailySummary(session.user_id, today);
-
-                    // Send completion message
+                    // Send message asking for work description to complete session
                     await app.client.chat.postMessage({
                         channel: session.user_id,
-                        text: `🎉 *Extra Work Auto-Completed!*\n\nAwesome! You've worked for ${duration} which covers your pending time.\nYour extra work session has been automatically completed.\n\nGreat job staying committed! 💪✨`
+                        text: `🎉 *Extra Work Time Completed!*\n\nAwesome! You've worked for ${duration} which covers your pending time.\n\n📝 *To complete your session:*\nPlease use \`/work-end\` to describe what you worked on and officially end your session.\n\nGreat job staying committed! 💪✨`,
+                        blocks: [
+                            {
+                                type: 'section',
+                                text: {
+                                    type: 'mrkdwn',
+                                    text: `🎉 *Extra Work Time Completed!*\n\nAwesome! You've worked for *${duration}* which covers your pending time.\n\n📝 *To complete your session:*\nPlease use \`/work-end\` to describe what you worked on and officially end your session.\n\nGreat job staying committed! 💪✨`
+                                }
+                            },
+                            {
+                                type: 'actions',
+                                elements: [
+                                    {
+                                        type: 'button',
+                                        text: {
+                                            type: 'plain_text',
+                                            text: 'Complete Session'
+                                        },
+                                        style: 'primary',
+                                        action_id: 'complete_extra_work',
+                                        value: session.user_id
+                                    }
+                                ]
+                            }
+                        ]
                     });
 
-                    console.log(`✅ Auto-completed extra work for user ${session.user_id} - worked ${duration}`);
+                    console.log(`⏰ Notified user ${session.user_id} to complete their extra work session - worked ${duration}`);
                 } catch (error) {
-                    console.error('Error auto-completing extra work:', error);
+                    console.error('Error notifying user to complete extra work:', error);
                 }
             }
         }
@@ -199,8 +219,8 @@ cron.schedule('* * * * *', async () => {
 // SLASH COMMANDS
 // ================================
 
-// Start unplanned leave - Interactive Modal
-app.command('/unplanned', async ({ command, ack, client }) => {
+// Start intermediate logout - Interactive Modal
+app.command('/intermediate-logout', async ({ command, ack, client }) => {
     await ack();
     
     // Update activity and ensure service is warmed up
@@ -302,8 +322,8 @@ app.command('/unplanned', async ({ command, ack, client }) => {
             trigger_id,
             view: {
                 type: 'modal',
-                callback_id: 'unplanned_leave_modal',
-                title: { type: 'plain_text', text: 'Start Unplanned Leave' },
+                            callback_id: 'intermediate_logout_modal',
+            title: { type: 'plain_text', text: 'Start Intermediate Logout' },
                 submit: { type: 'plain_text', text: 'Start Leave' },
                 close: { type: 'plain_text', text: 'Cancel' },
                 blocks: [
@@ -382,7 +402,7 @@ app.command('/unplanned', async ({ command, ack, client }) => {
                         elements: [
                             {
                                 type: 'mrkdwn',
-                                text: '💡 *This will be posted to #unplanned-leave for transparency*\n⚠️ *Task escalation is required to ensure proper handoff*'
+                                text: '💡 *This will be posted to your configured transparency channel for transparency*\n⚠️ *Task escalation is required to ensure proper handoff*'
                             }
                         ]
                     }
@@ -391,7 +411,7 @@ app.command('/unplanned', async ({ command, ack, client }) => {
         });
 
     } catch (error) {
-        console.error('Error in unplanned modal:', error);
+        console.error('Error in intermediate logout modal:', error);
         
         // Provide helpful error message based on the type of error
         let errorMessage = "Sorry, there was an error opening the leave form.";
@@ -537,7 +557,7 @@ app.command('/planned', async ({ command, ack, client }) => {
     }
 });
 
-// End unplanned leave
+// End intermediate logout
 app.command('/return', async ({ command, ack, say, client }) => {
     await ack();
     updateActivity();
@@ -568,7 +588,7 @@ app.command('/return', async ({ command, ack, say, client }) => {
         const summary = await db.updateDailySummary(user_id, today);
 
         // Check if total leave exceeds threshold (half-day scenario)
-        if (Utils.exceedsThreshold(summary.totalLeave, config.bot.maxUnplannedHours)) {
+        if (Utils.exceedsThreshold(summary.totalLeave, config.bot.maxIntermediateHours)) {
             const totalLeaveFormatted = Utils.formatDuration(summary.totalLeave);
             const halfDayMessage = Utils.formatHalfDayMessage(totalLeaveFormatted, config.bot.halfDayFormUrl);
             
@@ -621,7 +641,7 @@ app.command('/work-start', async ({ command, ack, say, client }) => {
     updateActivity();
     
     try {
-        const { user_id, text = 'Compensating unplanned leave' } = command;
+        const { user_id, text = 'Compensating intermediate logout' } = command;
 
         // Check if user already has an active extra work session
         const activeSession = await db.getUserActiveExtraWorkSession(user_id);
@@ -643,7 +663,7 @@ app.command('/work-start', async ({ command, ack, say, client }) => {
 
         // Post public message about extra work start
         await say({
-            text: `⏰ *${userName}* started extra work session to compensate for unplanned leave.`
+            text: `⏰ *${userName}* started extra work session to compensate for intermediate logout.`
         });
 
         // Send private confirmation to user
@@ -674,45 +694,72 @@ app.command('/work-end', async ({ command, ack, say, client }) => {
     try {
         const { user_id } = command;
 
-        // End the extra work session
-        const session = await db.endExtraWorkSession(user_id);
-        const duration = Utils.formatDuration(session.duration);
+        // Check if user has an active extra work session
+        const activeSession = await db.getUserActiveExtraWorkSession(user_id);
+        if (!activeSession) {
+            await client.chat.postEphemeral({
+                channel: command.channel_id,
+                user: user_id,
+                text: "You don't have an active extra work session to end."
+            });
+            return;
+        }
 
-        // Get user info for public message
-        const userInfo = await client.users.info({ user: user_id });
-        const userName = userInfo.user.real_name || userInfo.user.name;
-
-        // Update daily summary
-        const today = Utils.getCurrentDate();
-        await db.updateDailySummary(user_id, today);
-
-        // Post public message about extra work completion
-        await say({
-            text: `✅ *${userName}* completed extra work session. Duration: ${duration}`
-        });
-
-        // Send private confirmation to user
-        await client.chat.postEphemeral({
-            channel: command.channel_id,
-            user: user_id,
-            text: `✅ *Extra work session completed!*\n\nDuration: ${duration}\nGreat job! 🎉`
+        // Show modal to collect work description
+        await client.views.open({
+            trigger_id: command.trigger_id,
+            view: {
+                type: 'modal',
+                callback_id: 'work_end_modal',
+                title: { type: 'plain_text', text: 'End Extra Work Session' },
+                submit: { type: 'plain_text', text: 'Complete Session' },
+                close: { type: 'plain_text', text: 'Cancel' },
+                blocks: [
+                    {
+                        type: 'section',
+                        text: {
+                            type: 'mrkdwn',
+                            text: '📝 *Please describe what you worked on during this session:*'
+                        }
+                    },
+                    {
+                        type: 'input',
+                        block_id: 'work_description',
+                        element: {
+                            type: 'plain_text_input',
+                            action_id: 'description_input',
+                            multiline: true,
+                            placeholder: {
+                                type: 'plain_text',
+                                text: 'E.g., Fixed bug in user authentication, completed project documentation, attended team meeting, etc.'
+                            },
+                            max_length: 1000
+                        },
+                        label: {
+                            type: 'plain_text',
+                            text: 'Work Description'
+                        }
+                    },
+                    {
+                        type: 'context',
+                        elements: [
+                            {
+                                type: 'mrkdwn',
+                                text: '💡 *This description will be saved for record-keeping and transparency*'
+                            }
+                        ]
+                    }
+                ]
+            }
         });
 
     } catch (error) {
         console.error('Error in work-end:', error);
-        if (error.message.includes('No active extra work session')) {
-            await client.chat.postEphemeral({
-                channel: command.channel_id,
-                user: command.user_id,
-                text: "You don't have an active extra work session to end."
-            });
-        } else {
-            await client.chat.postEphemeral({
-                channel: command.channel_id,
-                user: command.user_id,
-                text: "Sorry, there was an error ending your extra work session. Please try again."
-            });
-        }
+        await client.chat.postEphemeral({
+            channel: command.channel_id,
+            user: command.user_id,
+            text: "Sorry, there was an error ending your extra work session. Please try again."
+        });
     }
 });
 
@@ -764,7 +811,23 @@ app.command('/review', async ({ command, ack, say, client }) => {
             statusMessage += `📈 *Completed Today*\n`;
             statusMessage += `• Leave: ${Utils.formatDuration(summary.total_leave_minutes)}\n`;
             statusMessage += `• Extra Work: ${Utils.formatDuration(summary.total_extra_work_minutes)}\n`;
-            statusMessage += `• Pending: ${Utils.formatDuration(summary.pending_extra_work_minutes)}\n`;
+            statusMessage += `• Pending: ${Utils.formatDuration(summary.pending_extra_work_minutes)}\n\n`;
+        }
+
+        // Add recent extra work sessions with descriptions
+        const recentExtraWork = await db.getUserRecentExtraWorkSessions(user_id, 7);
+        if (recentExtraWork.length > 0) {
+            statusMessage += `💼 *Recent Extra Work (Last 7 Days)*\n`;
+            recentExtraWork.forEach(session => {
+                const date = Utils.formatDate(session.date);
+                const duration = Utils.formatDuration(session.duration);
+                statusMessage += `• ${date}: ${duration}`;
+                if (session.work_description) {
+                    statusMessage += ` - ${session.work_description}`;
+                }
+                statusMessage += `\n`;
+            });
+            statusMessage += `\n`;
         }
         
         // If no activity at all
@@ -1044,6 +1107,9 @@ app.action('report_weekly', async ({ body, ack, client }) => {
                 }
             );
         });
+
+        // Get extra work sessions with descriptions for this period
+        const extraWorkWithDescriptions = await db.getExtraWorkSessionsWithDescriptions(startDateStr, endDate);
         
         // Create simple report text
         let reportText = `📊 *WEEKLY REPORT*\n📅 ${startDateStr} to ${endDate}\n\n`;
@@ -1060,6 +1126,23 @@ app.action('report_weekly', async ({ body, ack, client }) => {
                 reportText += `  Leave: ${leave} (${user.leave_count} sessions)\n`;
                 reportText += `  Extra Work: ${work} (${user.work_count} sessions)\n\n`;
             });
+        }
+
+        // Add work descriptions section if any exist
+        if (extraWorkWithDescriptions.length > 0) {
+            reportText += `💼 *EXTRA WORK DETAILS:*\n\n`;
+            extraWorkWithDescriptions.slice(0, 10).forEach(session => { // Limit to 10 to avoid long messages
+                const date = Utils.formatDate(session.date);
+                const duration = Utils.formatDuration(session.duration);
+                reportText += `• *${session.user_name}* (${date}): ${duration}\n`;
+                if (session.work_description) {
+                    reportText += `  📝 ${session.work_description}\n`;
+                }
+                reportText += `\n`;
+            });
+            if (extraWorkWithDescriptions.length > 10) {
+                reportText += `_... and ${extraWorkWithDescriptions.length - 10} more extra work sessions_\n`;
+            }
         }
         
         console.log('📤 Sending weekly report response, length:', reportText.length);
@@ -1125,6 +1208,9 @@ app.action('report_monthly', async ({ body, ack, client }) => {
                 }
             );
         });
+
+        // Get extra work sessions with descriptions for this period
+        const extraWorkWithDescriptions = await db.getExtraWorkSessionsWithDescriptions(startDateStr, endDate);
         
         // Create simple report text
         let reportText = `📊 *MONTHLY REPORT*\n📅 ${startDateStr} to ${endDate}\n\n`;
@@ -1149,6 +1235,23 @@ app.action('report_monthly', async ({ body, ack, client }) => {
                 const work = Utils.formatDuration(user.total_work || 0);
                 reportText += `• *${user.name}*: Leave ${leave}, Work ${work}\n`;
             });
+        }
+
+        // Add work descriptions section if any exist
+        if (extraWorkWithDescriptions.length > 0) {
+            reportText += `\n💼 *EXTRA WORK DETAILS:*\n\n`;
+            extraWorkWithDescriptions.slice(0, 15).forEach(session => { // Limit to 15 for monthly report
+                const date = Utils.formatDate(session.date);
+                const duration = Utils.formatDuration(session.duration);
+                reportText += `• *${session.user_name}* (${date}): ${duration}\n`;
+                if (session.work_description) {
+                    reportText += `  📝 ${session.work_description}\n`;
+                }
+                reportText += `\n`;
+            });
+            if (extraWorkWithDescriptions.length > 15) {
+                reportText += `_... and ${extraWorkWithDescriptions.length - 15} more extra work sessions_\n`;
+            }
         }
         
         console.log('📤 Sending monthly report response, length:', reportText.length);
@@ -1491,8 +1594,8 @@ async function getReminderMenu() {
 
 
 
-// Handle unplanned leave modal submission
-app.view('unplanned_leave_modal', async ({ ack, body, client, view }) => {
+// Handle intermediate logout modal submission
+app.view('intermediate_logout_modal', async ({ ack, body, client, view }) => {
     await ack();
     
     try {
@@ -1517,7 +1620,7 @@ app.view('unplanned_leave_modal', async ({ ack, body, client, view }) => {
         const minutes = parseInt(values.leave_minutes?.minutes_select?.selected_option?.value || '0');
         
         // Get reason (optional)
-        const reason = values.leave_reason?.reason_input?.value?.trim() || 'Unplanned leave';
+        const reason = values.leave_reason?.reason_input?.value?.trim() || 'Intermediate logout';
         
         // Get task escalation (required)
         const taskEscalation = values.task_escalation?.escalation_input?.value?.trim() || '';
@@ -1862,6 +1965,68 @@ app.view('planned_leave_modal', async ({ ack, body, client, view }) => {
     }
 });
 
+// Handle work end modal submission
+app.view('work_end_modal', async ({ ack, body, client, view }) => {
+    await ack();
+    
+    try {
+        const user_id = body.user.id;
+        const values = view.state.values;
+        
+        // Extract work description
+        const workDescription = values.work_description?.description_input?.value?.trim() || '';
+        
+        // Validate that description is provided
+        if (!workDescription) {
+            return {
+                response_action: 'errors',
+                errors: {
+                    work_description: 'Work description is required to complete the session'
+                }
+            };
+        }
+        
+        // End the extra work session with description
+        const session = await db.endExtraWorkSession(user_id, workDescription);
+        const duration = Utils.formatDuration(session.duration);
+
+        // Get user info for public message
+        const userInfo = await client.users.info({ user: user_id });
+        const userName = userInfo.user.real_name || userInfo.user.name;
+
+        // Update daily summary
+        const today = Utils.getCurrentDate();
+        await db.updateDailySummary(user_id, today);
+
+        // Post public message about extra work completion
+        await client.chat.postMessage({
+            channel: config.bot.transparencyChannel,
+            text: `✅ *${userName}* completed extra work session\n\n⏱️ Duration: ${duration}\n📝 Work done: ${workDescription}`
+        });
+
+        // Send private confirmation to user
+        await client.chat.postMessage({
+            channel: user_id,
+            text: `✅ *Extra work session completed!*\n\n⏱️ Duration: ${duration}\n📝 Work completed: ${workDescription}\n\nGreat job! 🎉`
+        });
+
+    } catch (error) {
+        console.error('Error in work end modal:', error);
+        
+        if (error.message.includes('No active extra work session')) {
+            await client.chat.postMessage({
+                channel: body.user.id,
+                text: "❌ No active extra work session found. You may have already ended it."
+            });
+        } else {
+            await client.chat.postMessage({
+                channel: body.user.id,
+                text: "Sorry, there was an error ending your extra work session. Please try again."
+            });
+        }
+    }
+});
+
 // User drill-down actions
 app.action(/^user_details_(.+)$/, async ({ body, ack, respond, action }) => {
     await ack();
@@ -1978,32 +2143,150 @@ app.action('extra_work_continue', async ({ body, ack, say }) => {
 });
 
 // Handle extra work stop button
-app.action('extra_work_stop', async ({ body, ack, say }) => {
+app.action('extra_work_stop', async ({ body, ack, client }) => {
     await ack();
     
     try {
         const userId = body.actions[0].value;
         
-        // End the extra work session
-        const session = await db.endExtraWorkSession(userId);
-        const duration = Utils.formatDuration(session.duration);
+        // Check if user still has an active session
+        const activeSession = await db.getUserActiveExtraWorkSession(userId);
+        if (!activeSession) {
+            await client.chat.postMessage({
+                channel: userId,
+                text: "❌ No active extra work session found. You may have already ended it."
+            });
+            return;
+        }
 
-        // Update daily summary
-        const today = Utils.getCurrentDate();
-        await db.updateDailySummary(userId, today);
-
-        // Post public message about extra work completion
-        await say({
-            text: `✅ *${userId}* completed extra work session. Duration: ${duration}`
-        });
-
-        // Send private confirmation to user
-        await say({
-            text: `✅ *Extra work session completed!*\n\nDuration: ${duration}\nGreat job! 🎉`
+        // Show modal to collect work description
+        await client.views.open({
+            trigger_id: body.trigger_id,
+            view: {
+                type: 'modal',
+                callback_id: 'work_end_modal',
+                title: { type: 'plain_text', text: 'End Extra Work Session' },
+                submit: { type: 'plain_text', text: 'Complete Session' },
+                close: { type: 'plain_text', text: 'Cancel' },
+                blocks: [
+                    {
+                        type: 'section',
+                        text: {
+                            type: 'mrkdwn',
+                            text: '📝 *Please describe what you worked on during this session:*'
+                        }
+                    },
+                    {
+                        type: 'input',
+                        block_id: 'work_description',
+                        element: {
+                            type: 'plain_text_input',
+                            action_id: 'description_input',
+                            multiline: true,
+                            placeholder: {
+                                type: 'plain_text',
+                                text: 'E.g., Fixed bug in user authentication, completed project documentation, attended team meeting, etc.'
+                            },
+                            max_length: 1000
+                        },
+                        label: {
+                            type: 'plain_text',
+                            text: 'Work Description'
+                        }
+                    },
+                    {
+                        type: 'context',
+                        elements: [
+                            {
+                                type: 'mrkdwn',
+                                text: '💡 *This description will be saved for record-keeping and transparency*'
+                            }
+                        ]
+                    }
+                ]
+            }
         });
 
     } catch (error) {
         console.error('Error in extra work stop:', error);
+        await client.chat.postMessage({
+            channel: body.actions[0].value,
+            text: "Sorry, there was an error ending your extra work session. Please try again."
+        });
+    }
+});
+
+// Handle complete extra work button
+app.action('complete_extra_work', async ({ body, ack, client }) => {
+    await ack();
+    
+    try {
+        const userId = body.actions[0].value;
+        
+        // Check if user still has an active session
+        const activeSession = await db.getUserActiveExtraWorkSession(userId);
+        if (!activeSession) {
+            await client.chat.postMessage({
+                channel: userId,
+                text: "❌ No active extra work session found. You may have already ended it."
+            });
+            return;
+        }
+
+        // Show modal to collect work description
+        await client.views.open({
+            trigger_id: body.trigger_id,
+            view: {
+                type: 'modal',
+                callback_id: 'work_end_modal',
+                title: { type: 'plain_text', text: 'Complete Extra Work' },
+                submit: { type: 'plain_text', text: 'Complete Session' },
+                close: { type: 'plain_text', text: 'Cancel' },
+                blocks: [
+                    {
+                        type: 'section',
+                        text: {
+                            type: 'mrkdwn',
+                            text: '🎉 *Great job completing your extra work time!*\n\n📝 *Please describe what you worked on:*'
+                        }
+                    },
+                    {
+                        type: 'input',
+                        block_id: 'work_description',
+                        element: {
+                            type: 'plain_text_input',
+                            action_id: 'description_input',
+                            multiline: true,
+                            placeholder: {
+                                type: 'plain_text',
+                                text: 'E.g., Fixed bug in user authentication, completed project documentation, attended team meeting, etc.'
+                            },
+                            max_length: 1000
+                        },
+                        label: {
+                            type: 'plain_text',
+                            text: 'Work Description'
+                        }
+                    },
+                    {
+                        type: 'context',
+                        elements: [
+                            {
+                                type: 'mrkdwn',
+                                text: '💡 *This description will be saved for record-keeping and transparency*'
+                            }
+                        ]
+                    }
+                ]
+            }
+        });
+
+    } catch (error) {
+        console.error('Error in complete extra work:', error);
+        await client.chat.postMessage({
+            channel: body.actions[0].value,
+            text: "Sorry, there was an error completing your extra work session. Please try again."
+        });
     }
 });
 
@@ -2143,7 +2426,7 @@ cron.schedule('30 3 * * 1', async () => {
         await app.start();
         console.log('⚡️ Attendance Bot is running!');
         console.log('📍 Configuration:');
-        console.log(`  • Max unplanned hours: ${config.bot.maxUnplannedHours}h`);
+        console.log(`  • Max intermediate hours: ${config.bot.maxIntermediateHours}h`);
         console.log(`  • Transparency channel: ${config.bot.transparencyChannel}`);
         console.log(`  • Admin notifications: ${config.notifications.notifyChannel ? '✅ ' + config.notifications.notifyChannel : '❌ Disabled'}`);
         console.log(`  • Admin password set: ${config.bot.adminPassword ? '✅' : '❌'}`);
@@ -2151,7 +2434,7 @@ cron.schedule('30 3 * * 1', async () => {
         console.log(`  • Planned leave form: ${config.bot.plannedLeaveFormUrl}`);
         console.log(`  • Keepalive: ${RENDER_URL ? '✅ Enabled' : '❌ Disabled (add RENDER_URL env var)'}`);
         console.log('🚀 Available commands:');
-        console.log('  /unplanned <duration> <reason> - Start unplanned leave');
+        console.log('  /intermediate-logout <duration> <reason> - Start intermediate logout');
         console.log('  /planned - Request planned leave');
         console.log('  /return - End current leave');
         console.log('  /work-start [reason] - Start extra work session');

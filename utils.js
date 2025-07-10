@@ -373,7 +373,7 @@ class Utils {
         const deadline = this.getDeadlineDate(7); // 7 days from now
 
         let summary = `📊 *Daily Summary for ${userName}*\n`;
-        summary += `• Unplanned leave taken: ${leaveTime}\n`;
+                    summary += `• Intermediate logout taken: ${leaveTime}\n`;
         summary += `• Extra work completed: ${extraWork}\n`;
         
         if (userData.pending_extra_work_minutes > 0) {
@@ -392,7 +392,7 @@ class Utils {
 
     // Create leave transparency message
     static formatLeaveTransparencyMessage(userName, duration, reason, returnTime, taskEscalation = '') {
-        let message = `🏃‍♂️ *${userName}* is on unplanned leave for *${duration}* (${reason}) - back by *${returnTime}*`;
+        let message = `🏃‍♂️ *${userName}* is on intermediate logout for *${duration}* (${reason}) - back by *${returnTime}*`;
         
         if (taskEscalation) {
             message += `\n\n🔄 *Task Escalation:* ${taskEscalation}`;
@@ -447,7 +447,7 @@ class Utils {
 
     // Create half-day trigger message
     static formatHalfDayMessage(totalTime, formUrl) {
-        return `⚠️ Your total unplanned leave today (${totalTime}) exceeds 2.5h. Please fill the half-day form: ${formUrl}`;
+        return `⚠️ Your total intermediate logout today (${totalTime}) exceeds 2.5h. Please fill the half-day form: ${formUrl}`;
     }
 
     // Create extra work prompt message

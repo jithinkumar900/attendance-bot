@@ -37,7 +37,8 @@ class Database {
                 end_time DATETIME,
                 duration INTEGER, -- in minutes
                 date TEXT NOT NULL, -- YYYY-MM-DD format
-                reason TEXT DEFAULT 'Compensating unplanned leave',
+                reason TEXT DEFAULT 'Compensating intermediate logout',
+                work_description TEXT, -- What was worked on during the session
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users (id)
             )`,
@@ -61,6 +62,16 @@ class Database {
                 if (err) console.error('Database initialization error:', err);
             });
         });
+
+        // Migration: Add work_description column if it doesn't exist
+        this.db.run(
+            `ALTER TABLE extra_work_sessions ADD COLUMN work_description TEXT`,
+            (err) => {
+                if (err && !err.message.includes('duplicate column name')) {
+                    console.error('Migration error:', err);
+                }
+            }
+        );
     }
 
     // User management
@@ -182,7 +193,7 @@ class Database {
     }
 
     // Extra work session management
-    async startExtraWorkSession(userId, reason = 'Compensating unplanned leave') {
+    async startExtraWorkSession(userId, reason = 'Compensating intermediate logout') {
         const now = new Date();
         const date = now.toISOString().split('T')[0];
         
@@ -200,7 +211,7 @@ class Database {
         });
     }
 
-    async endExtraWorkSession(userId) {
+    async endExtraWorkSession(userId, workDescription = null) {
         const now = new Date();
         
         return new Promise((resolve, reject) => {
@@ -218,12 +229,12 @@ class Database {
                         
                         this.db.run(
                             `UPDATE extra_work_sessions 
-                            SET end_time = ?, duration = ? 
+                            SET end_time = ?, duration = ?, work_description = ? 
                             WHERE id = ?`,
-                            [now.toISOString(), duration, session.id],
+                            [now.toISOString(), duration, workDescription, session.id],
                             function(err) {
                                 if (err) reject(err);
-                                else resolve({ ...session, duration, end_time: now.toISOString() });
+                                else resolve({ ...session, duration, end_time: now.toISOString(), work_description: workDescription });
                             }
                         );
                     }
@@ -262,8 +273,8 @@ class Database {
                 
                 // Only count leave time ≤ 2.5h (150 minutes) towards pending extra work
                 // Leave time > 2.5h is handled as half-day leave and doesn't need compensation
-                const maxUnplannedMinutes = 2.5 * 60; // 150 minutes
-                const compensatableLeave = Math.min(totalLeave, maxUnplannedMinutes);
+                        const maxIntermediateMinutes = 2.5 * 60; // 150 minutes
+        const compensatableLeave = Math.min(totalLeave, maxIntermediateMinutes);
                 const pendingExtraWork = Math.max(0, compensatableLeave - totalExtraWork);
 
                 this.db.run(
@@ -384,6 +395,49 @@ class Database {
                 (err, results) => {
                     if (err) reject(err);
                     else resolve(results);
+                }
+            );
+        });
+    }
+
+    // Get detailed extra work sessions with descriptions for reports
+    async getExtraWorkSessionsWithDescriptions(startDate, endDate) {
+        return new Promise((resolve, reject) => {
+            this.db.all(
+                `SELECT ews.*, u.name as user_name 
+                FROM extra_work_sessions ews
+                JOIN users u ON ews.user_id = u.id
+                WHERE ews.date BETWEEN ? AND ?
+                AND ews.end_time IS NOT NULL
+                AND ews.work_description IS NOT NULL
+                ORDER BY ews.date DESC, ews.start_time DESC`,
+                [startDate, endDate],
+                (err, results) => {
+                    if (err) reject(err);
+                    else resolve(results || []);
+                }
+            );
+        });
+    }
+
+    // Get user's recent extra work sessions with descriptions
+    async getUserRecentExtraWorkSessions(userId, days = 7) {
+        const cutoffDate = new Date();
+        cutoffDate.setDate(cutoffDate.getDate() - days);
+        const cutoffDateStr = cutoffDate.toISOString().split('T')[0];
+
+        return new Promise((resolve, reject) => {
+            this.db.all(
+                `SELECT * FROM extra_work_sessions 
+                WHERE user_id = ? 
+                AND date >= ?
+                AND end_time IS NOT NULL
+                ORDER BY start_time DESC 
+                LIMIT 5`,
+                [userId, cutoffDateStr],
+                (err, results) => {
+                    if (err) reject(err);
+                    else resolve(results || []);
                 }
             );
         });

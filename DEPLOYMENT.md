@@ -11,7 +11,7 @@ SLACK_APP_TOKEN=xapp-your-app-token-here
 
 ### **Bot Settings (Optional - has defaults)**
 ```
-MAX_UNPLANNED_HOURS=2.5
+MAX_INTERMEDIATE_HOURS=2.5
 WORKING_HOURS_PER_DAY=8
 EXTRA_WORK_DEADLINE_DAYS=7
 ADMIN_PASSWORD=your-secure-password
@@ -70,7 +70,7 @@ ADMIN_PASSWORD=MySecurePassword123
 TRANSPARENCY_CHANNEL=#company-leave
 HALF_DAY_FORM_URL=https://forms.google.com/d/your-form-id/viewform
 NOTIFY_USERS=@hr-team,@ceo
-MAX_UNPLANNED_HOURS=3.0
+MAX_INTERMEDIATE_HOURS=3.0
 ```
 
 ### **Step 4: Deploy**
@@ -84,7 +84,7 @@ Click "Create Web Service" and wait for deployment!
 - ✅ **Change form link**: Update `HALF_DAY_FORM_URL` in Render dashboard
 - ✅ **Change admin password**: Update `ADMIN_PASSWORD` 
 - ✅ **Change notification users**: Update `NOTIFY_USERS`
-- ✅ **Change time limits**: Update `MAX_UNPLANNED_HOURS`
+- ✅ **Change time limits**: Update `MAX_INTERMEDIATE_HOURS`
 
 ### **Instant Changes:**
 1. Go to Render dashboard
@@ -98,7 +98,7 @@ Click "Create Web Service" and wait for deployment!
 
 ### **For Stricter Policy:**
 ```
-MAX_UNPLANNED_HOURS=2.0
+MAX_INTERMEDIATE_HOURS=2.0
 EXTRA_WORK_DEADLINE_DAYS=5
 ```
 
