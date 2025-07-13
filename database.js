@@ -54,6 +54,30 @@ class Database {
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users (id),
                 UNIQUE(user_id, date)
+            )`,
+
+            `CREATE TABLE IF NOT EXISTS leave_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                user_name TEXT NOT NULL,
+                leave_type TEXT NOT NULL, -- 'planned' or 'intermediate'
+                reason TEXT NOT NULL,
+                task_escalation TEXT,
+                -- For intermediate logout
+                planned_duration INTEGER, -- in minutes
+                expected_return_time TEXT,
+                -- For planned leave
+                start_date TEXT,
+                end_date TEXT,
+                leave_duration_days INTEGER,
+                -- Approval workflow
+                status TEXT DEFAULT 'pending', -- 'pending', 'approved', 'denied'
+                approved_by TEXT,
+                approved_at DATETIME,
+                approval_notes TEXT,
+                -- Timestamps
+                requested_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users (id)
             )`
         ];
 
@@ -458,6 +482,90 @@ class Database {
                 (err, results) => {
                     if (err) reject(err);
                     else resolve(results || []);
+                }
+            );
+        });
+    }
+
+    // Leave request management
+    async createLeaveRequest(userId, userName, leaveType, reason, taskEscalation, additionalData = {}) {
+        return new Promise((resolve, reject) => {
+            const {
+                plannedDuration,
+                expectedReturnTime,
+                startDate,
+                endDate,
+                leaveDurationDays
+            } = additionalData;
+
+            this.db.run(
+                `INSERT INTO leave_requests 
+                (user_id, user_name, leave_type, reason, task_escalation, planned_duration, 
+                expected_return_time, start_date, end_date, leave_duration_days) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [userId, userName, leaveType, reason, taskEscalation, plannedDuration, 
+                expectedReturnTime, startDate, endDate, leaveDurationDays],
+                function(err) {
+                    if (err) reject(err);
+                    else resolve(this.lastID);
+                }
+            );
+        });
+    }
+
+    async updateLeaveRequestStatus(requestId, status, approvedBy, approvalNotes = null) {
+        return new Promise((resolve, reject) => {
+            this.db.run(
+                `UPDATE leave_requests 
+                SET status = ?, approved_by = ?, approved_at = CURRENT_TIMESTAMP, approval_notes = ? 
+                WHERE id = ?`,
+                [status, approvedBy, approvalNotes, requestId],
+                function(err) {
+                    if (err) reject(err);
+                    else resolve(this.changes);
+                }
+            );
+        });
+    }
+
+    async getLeaveRequest(requestId) {
+        return new Promise((resolve, reject) => {
+            this.db.get(
+                `SELECT * FROM leave_requests WHERE id = ?`,
+                [requestId],
+                (err, request) => {
+                    if (err) reject(err);
+                    else resolve(request);
+                }
+            );
+        });
+    }
+
+    async getPendingLeaveRequests() {
+        return new Promise((resolve, reject) => {
+            this.db.all(
+                `SELECT * FROM leave_requests 
+                WHERE status = 'pending' 
+                ORDER BY requested_at ASC`,
+                (err, requests) => {
+                    if (err) reject(err);
+                    else resolve(requests);
+                }
+            );
+        });
+    }
+
+    async getUserLeaveRequests(userId, limit = 10) {
+        return new Promise((resolve, reject) => {
+            this.db.all(
+                `SELECT * FROM leave_requests 
+                WHERE user_id = ? 
+                ORDER BY requested_at DESC 
+                LIMIT ?`,
+                [userId, limit],
+                (err, requests) => {
+                    if (err) reject(err);
+                    else resolve(requests);
                 }
             );
         });

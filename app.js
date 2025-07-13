@@ -14,6 +14,8 @@ const config = {
         extraWorkDeadlineDays: parseInt(process.env.EXTRA_WORK_DEADLINE_DAYS) || 7,
         adminPassword: process.env.ADMIN_PASSWORD || 'admin123',
         transparencyChannel: process.env.TRANSPARENCY_CHANNEL || '#intermediate-logout',
+        leaveApprovalChannel: process.env.LEAVE_APPROVAL_CHANNEL || '#leave-approval',
+        hrChannel: process.env.HR_CHANNEL || '#hr-notifications',
         halfDayFormUrl: process.env.HALF_DAY_FORM_URL || 'https://forms.google.com/your-half-day-form-link',
         plannedLeaveFormUrl: process.env.PLANNED_LEAVE_FORM_URL || 'https://forms.google.com/your-planned-leave-form-link'
     },
@@ -1670,25 +1672,65 @@ app.view('intermediate_logout_modal', async ({ ack, body, client, view }) => {
         const returnTime = Utils.calculateReturnTime(durationMinutes);
         const formattedDuration = Utils.formatDuration(durationMinutes);
         
-        // Start leave session
-        await db.startLeaveSession(user_id, durationMinutes, reason);
+        // Create leave request for approval
+        const requestId = await db.createLeaveRequest(
+            user_id, 
+            userName, 
+            'intermediate', 
+            reason, 
+            taskEscalation, 
+            {
+                plannedDuration: durationMinutes,
+                expectedReturnTime: returnTime
+            }
+        );
         
-        // Send transparency message to the configured channel (PUBLIC)
-        const message = Utils.formatLeaveTransparencyMessage(userName, formattedDuration, reason, returnTime, taskEscalation);
+        // Send approval request to leave-approval channel with interactive buttons
+        const approvalMessage = {
+            text: `🔄 *Leave Request - Intermediate Logout*`,
+            blocks: [
+                {
+                    type: 'section',
+                    text: {
+                        type: 'mrkdwn',
+                        text: `🔄 *Leave Request - Intermediate Logout*\n\n👤 *Employee:* ${userName}\n⏰ *Duration:* ${formattedDuration}\n🕐 *Expected Return:* ${returnTime}\n📝 *Reason:* ${reason}\n\n🔄 *Task Escalation:*\n${taskEscalation}`
+                    }
+                },
+                {
+                    type: 'actions',
+                    elements: [
+                        {
+                            type: 'button',
+                            text: { type: 'plain_text', text: '✅ Approve' },
+                            style: 'primary',
+                            action_id: 'approve_leave',
+                            value: requestId.toString()
+                        },
+                        {
+                            type: 'button',
+                            text: { type: 'plain_text', text: '❌ Deny' },
+                            style: 'danger',
+                            action_id: 'deny_leave',
+                            value: requestId.toString()
+                        }
+                    ]
+                }
+            ]
+        };
         
         await client.chat.postMessage({
-            channel: config.bot.transparencyChannel,
-            text: message
+            channel: config.bot.leaveApprovalChannel,
+            ...approvalMessage
         });
         
         // Send success message to user (private)
-        let successMessage = `✅ *Leave started successfully!*\n\n⏰ Duration: ${formattedDuration}\n🕐 Expected return: ${returnTime}\n📝 Reason: ${reason}`;
+        let successMessage = `✅ *Leave request submitted successfully!*\n\n⏰ Duration: ${formattedDuration}\n🕐 Expected return: ${returnTime}\n📝 Reason: ${reason}`;
         
         if (taskEscalation) {
             successMessage += `\n🔄 Task Escalation: ${taskEscalation}`;
         }
         
-        successMessage += `\n\nPosted to ${config.bot.transparencyChannel} for transparency. 👍`;
+        successMessage += `\n\n📋 Your request has been sent to ${config.bot.leaveApprovalChannel} for manager approval.`;
         
         await client.chat.postEphemeral({
             channel: config.bot.transparencyChannel,
@@ -1914,12 +1956,56 @@ app.view('planned_leave_modal', async ({ ack, body, client, view }) => {
         const timeDiff = end.getTime() - start.getTime();
         const daysDiff = Math.ceil(timeDiff / (1000 * 3600 * 24)) + 1; // +1 to include both start and end dates
         
-        // Send planned leave message to transparency channel (same channel for both types)
-        const message = Utils.formatPlannedLeaveMessage(userName, leaveType, dateRange, daysDiff, reason, taskEscalation);
+        // Create leave request for approval
+        const requestId = await db.createLeaveRequest(
+            user_id, 
+            userName, 
+            'planned', 
+            reason, 
+            taskEscalation, 
+            {
+                startDate: startDate,
+                endDate: endDate,
+                leaveDurationDays: daysDiff
+            }
+        );
+        
+        // Send approval request to leave-approval channel with interactive buttons
+        const approvalMessage = {
+            text: `📅 *Leave Request - Planned Leave*`,
+            blocks: [
+                {
+                    type: 'section',
+                    text: {
+                        type: 'mrkdwn',
+                        text: `📅 *Leave Request - Planned Leave*\n\n👤 *Employee:* ${userName}\n📅 *Dates:* ${dateRange}\n📋 *Type:* ${Utils.formatLeaveType(leaveType)}\n📝 *Reason:* ${reason}\n⏱️ *Duration:* ${daysDiff} day${daysDiff > 1 ? 's' : ''}\n\n🔄 *Task Escalation:*\n${taskEscalation}`
+                    }
+                },
+                {
+                    type: 'actions',
+                    elements: [
+                        {
+                            type: 'button',
+                            text: { type: 'plain_text', text: '✅ Approve' },
+                            style: 'primary',
+                            action_id: 'approve_leave',
+                            value: requestId.toString()
+                        },
+                        {
+                            type: 'button',
+                            text: { type: 'plain_text', text: '❌ Deny' },
+                            style: 'danger',
+                            action_id: 'deny_leave',
+                            value: requestId.toString()
+                        }
+                    ]
+                }
+            ]
+        };
         
         await client.chat.postMessage({
-            channel: config.bot.transparencyChannel,
-            text: message
+            channel: config.bot.leaveApprovalChannel,
+            ...approvalMessage
         });
         
         // Send success message to user (private)
@@ -1928,9 +2014,10 @@ app.view('planned_leave_modal', async ({ ack, body, client, view }) => {
         successMessage += `📋 *Type:* ${Utils.formatLeaveType(leaveType)}\n`;
         successMessage += `📝 *Reason:* ${reason}\n`;
         successMessage += `🔄 *Task Escalation:* ${taskEscalation}`;
+        successMessage += `\n\n📋 Your request has been sent to ${config.bot.leaveApprovalChannel} for manager approval.`;
         
         await client.chat.postEphemeral({
-            channel: config.bot.transparencyChannel,
+            channel: config.bot.leaveApprovalChannel,
             user: user_id,
             text: successMessage
         });
@@ -2291,6 +2378,193 @@ app.action('complete_extra_work', async ({ body, ack, client }) => {
 });
 
 // ================================
+// LEAVE APPROVAL HANDLERS
+// ================================
+
+// Handle approve leave button
+app.action('approve_leave', async ({ ack, body, client, action }) => {
+    await ack();
+    
+    try {
+        const requestId = parseInt(action.value);
+        const approverId = body.user.id;
+        
+        // Anyone in the leave approval channel can approve requests
+        // No additional authorization check needed
+        
+        // Get the leave request
+        const leaveRequest = await db.getLeaveRequest(requestId);
+        if (!leaveRequest) {
+            await client.chat.postEphemeral({
+                channel: body.channel.id,
+                user: approverId,
+                text: "❌ Leave request not found."
+            });
+            return;
+        }
+        
+        if (leaveRequest.status !== 'pending') {
+            await client.chat.postEphemeral({
+                channel: body.channel.id,
+                user: approverId,
+                text: `❌ This leave request has already been ${leaveRequest.status}.`
+            });
+            return;
+        }
+        
+        // Get approver info
+        const approverInfo = await client.users.info({ user: approverId });
+        const approverName = approverInfo.user.real_name || approverInfo.user.name;
+        
+        // Update leave request status
+        await db.updateLeaveRequestStatus(requestId, 'approved', approverId);
+        
+        // For intermediate logout, start the actual leave session
+        if (leaveRequest.leave_type === 'intermediate') {
+            await db.startLeaveSession(leaveRequest.user_id, leaveRequest.planned_duration, leaveRequest.reason);
+            
+            // Send transparency message
+            const returnTime = leaveRequest.expected_return_time;
+            const formattedDuration = Utils.formatDuration(leaveRequest.planned_duration);
+            const message = Utils.formatLeaveTransparencyMessage(
+                leaveRequest.user_name, 
+                formattedDuration, 
+                leaveRequest.reason, 
+                returnTime, 
+                leaveRequest.task_escalation
+            );
+            
+            await client.chat.postMessage({
+                channel: config.bot.transparencyChannel,
+                text: message
+            });
+            
+            // Notify user
+            await client.chat.postMessage({
+                channel: leaveRequest.user_id,
+                text: `✅ *Leave Approved!*\n\nYour intermediate logout request has been approved by ${approverName}.\n⏰ Duration: ${formattedDuration}\n🕐 Expected return: ${returnTime}\n\nYour leave has started automatically. Use \`/return\` when you're back!`
+            });
+        } else {
+            // For planned leave, just notify user
+            const dateRange = leaveRequest.start_date === leaveRequest.end_date ? 
+                Utils.formatDate(leaveRequest.start_date) : 
+                `${Utils.formatDate(leaveRequest.start_date)} - ${Utils.formatDate(leaveRequest.end_date)}`;
+            
+            await client.chat.postMessage({
+                channel: leaveRequest.user_id,
+                text: `✅ *Leave Approved!*\n\nYour planned leave request has been approved by ${approverName}.\n📅 Dates: ${dateRange}\n📝 Reason: ${leaveRequest.reason}\n\nDon't forget to complete the official leave form if you haven't already!`
+            });
+        }
+        
+        // Update the original message to show approval
+        await client.chat.update({
+            channel: body.channel.id,
+            ts: body.message.ts,
+            text: `✅ *Leave Request - ${leaveRequest.leave_type === 'intermediate' ? 'Intermediate Logout' : 'Planned Leave'}* (APPROVED)`,
+            blocks: [
+                {
+                    type: 'section',
+                    text: {
+                        type: 'mrkdwn',
+                        text: `✅ *Leave Request - ${leaveRequest.leave_type === 'intermediate' ? 'Intermediate Logout' : 'Planned Leave'}* (APPROVED)\n\n👤 *Employee:* ${leaveRequest.user_name}\n📝 *Reason:* ${leaveRequest.reason}\n\n✅ *Approved by:* ${approverName}\n⏰ *Approved at:* ${new Date().toLocaleString()}`
+                    }
+                }
+            ]
+        });
+        
+        // Notify HR
+        await client.chat.postMessage({
+            channel: config.bot.hrChannel,
+            text: `✅ *Leave Request Approved*\n\n👤 *Employee:* ${leaveRequest.user_name}\n📋 *Type:* ${leaveRequest.leave_type === 'intermediate' ? 'Intermediate Logout' : 'Planned Leave'}\n📝 *Reason:* ${leaveRequest.reason}\n✅ *Approved by:* ${approverName}\n⏰ *Approved at:* ${new Date().toLocaleString()}\n\n💼 *HR Action Required:* Please send official confirmation email to employee.`
+        });
+        
+    } catch (error) {
+        console.error('Error approving leave:', error);
+        await client.chat.postEphemeral({
+            channel: body.channel.id,
+            user: body.user.id,
+            text: "❌ Error approving leave request. Please try again."
+        });
+    }
+});
+
+// Handle deny leave button
+app.action('deny_leave', async ({ ack, body, client, action }) => {
+    await ack();
+    
+    try {
+        const requestId = parseInt(action.value);
+        const denierId = body.user.id;
+        
+        // Anyone in the leave approval channel can deny requests
+        // No additional authorization check needed
+        
+        // Get the leave request
+        const leaveRequest = await db.getLeaveRequest(requestId);
+        if (!leaveRequest) {
+            await client.chat.postEphemeral({
+                channel: body.channel.id,
+                user: denierId,
+                text: "❌ Leave request not found."
+            });
+            return;
+        }
+        
+        if (leaveRequest.status !== 'pending') {
+            await client.chat.postEphemeral({
+                channel: body.channel.id,
+                user: denierId,
+                text: `❌ This leave request has already been ${leaveRequest.status}.`
+            });
+            return;
+        }
+        
+        // Get denier info
+        const denierInfo = await client.users.info({ user: denierId });
+        const denierName = denierInfo.user.real_name || denierInfo.user.name;
+        
+        // Update leave request status
+        await db.updateLeaveRequestStatus(requestId, 'denied', denierId);
+        
+        // Notify user
+        await client.chat.postMessage({
+            channel: leaveRequest.user_id,
+            text: `❌ *Leave Request Denied*\n\nYour ${leaveRequest.leave_type === 'intermediate' ? 'intermediate logout' : 'planned leave'} request has been denied by ${denierName}.\n📝 Reason: ${leaveRequest.reason}\n\nPlease discuss with your manager for more details.`
+        });
+        
+        // Update the original message to show denial
+        await client.chat.update({
+            channel: body.channel.id,
+            ts: body.message.ts,
+            text: `❌ *Leave Request - ${leaveRequest.leave_type === 'intermediate' ? 'Intermediate Logout' : 'Planned Leave'}* (DENIED)`,
+            blocks: [
+                {
+                    type: 'section',
+                    text: {
+                        type: 'mrkdwn',
+                        text: `❌ *Leave Request - ${leaveRequest.leave_type === 'intermediate' ? 'Intermediate Logout' : 'Planned Leave'}* (DENIED)\n\n👤 *Employee:* ${leaveRequest.user_name}\n📝 *Reason:* ${leaveRequest.reason}\n\n❌ *Denied by:* ${denierName}\n⏰ *Denied at:* ${new Date().toLocaleString()}`
+                    }
+                }
+            ]
+        });
+        
+        // Notify HR
+        await client.chat.postMessage({
+            channel: config.bot.hrChannel,
+            text: `❌ *Leave Request Denied*\n\n👤 *Employee:* ${leaveRequest.user_name}\n📋 *Type:* ${leaveRequest.leave_type === 'intermediate' ? 'Intermediate Logout' : 'Planned Leave'}\n📝 *Reason:* ${leaveRequest.reason}\n❌ *Denied by:* ${denierName}\n⏰ *Denied at:* ${new Date().toLocaleString()}\n\n💼 *HR Action Required:* Please send official denial email to employee.`
+        });
+        
+    } catch (error) {
+        console.error('Error denying leave:', error);
+        await client.chat.postEphemeral({
+            channel: body.channel.id,
+            user: body.user.id,
+            text: "❌ Error denying leave request. Please try again."
+        });
+    }
+});
+
+// ================================
 // AUTOMATIC TIME EXCEEDED CHECKS
 // ================================
 
@@ -2428,14 +2702,17 @@ cron.schedule('30 3 * * 1', async () => {
         console.log('📍 Configuration:');
         console.log(`  • Max intermediate hours: ${config.bot.maxIntermediateHours}h`);
         console.log(`  • Transparency channel: ${config.bot.transparencyChannel}`);
+        console.log(`  • Leave approval channel: ${config.bot.leaveApprovalChannel}`);
+        console.log(`  • HR notifications channel: ${config.bot.hrChannel}`);
+        console.log(`  • Leave approval access: Anyone in the ${config.bot.leaveApprovalChannel} channel`);
         console.log(`  • Admin notifications: ${config.notifications.notifyChannel ? '✅ ' + config.notifications.notifyChannel : '❌ Disabled'}`);
         console.log(`  • Admin password set: ${config.bot.adminPassword ? '✅' : '❌'}`);
         console.log(`  • Half-day form: ${config.bot.halfDayFormUrl}`);
         console.log(`  • Planned leave form: ${config.bot.plannedLeaveFormUrl}`);
         console.log(`  • Keepalive: ${RENDER_URL ? '✅ Enabled' : '❌ Disabled (add RENDER_URL env var)'}`);
         console.log('🚀 Available commands:');
-        console.log('  /intermediate_logout <duration> <reason> - Start intermediate logout');
-        console.log('  /planned - Request planned leave');
+        console.log('  /intermediate_logout <duration> <reason> - Start intermediate logout (requires approval)');
+        console.log('  /planned - Request planned leave (requires approval)');
         console.log('  /return - End current leave');
         console.log('  /work-start [reason] - Start extra work session');
         console.log('  /work-end - End extra work session');
