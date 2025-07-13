@@ -445,9 +445,9 @@ class Utils {
         return `✅ *${userName}* returned from leave (actual time: *${actualDuration}*)`;
     }
 
-    // Create half-day trigger message
-    static formatHalfDayMessage(totalTime, formUrl) {
-        return `⚠️ Your total intermediate logout today (${totalTime}) exceeds 2.5h. Please fill the half-day form: ${formUrl}`;
+    // Create time exceeded message (no longer intermediate logout)
+    static formatTimeExceededMessage(totalTime) {
+        return `⚠️ Your total time today (${totalTime}) exceeds the intermediate logout limit. This has been marked as regular leave, not intermediate logout.`;
     }
 
     // Create extra work prompt message

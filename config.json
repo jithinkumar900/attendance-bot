@@ -6,9 +6,7 @@
     "adminPassword": "admin123",
     "transparencyChannel": "#intermediate-logout",
     "leaveApprovalChannel": "#leave-approval",
-    "hrChannel": "#hr-notifications",
-    "halfDayFormUrl": "https://forms.google.com/your-half-day-form-link",
-    "plannedLeaveFormUrl": "https://forms.google.com/your-planned-leave-form-link"
+    "hrChannel": "#hr-notifications"
   },
   "notifications": {
     "notifyUsers": ["@hr-team", "@manager"],

@@ -15,9 +15,7 @@ const config = {
         adminPassword: process.env.ADMIN_PASSWORD || 'admin123',
         transparencyChannel: process.env.TRANSPARENCY_CHANNEL || '#intermediate-logout',
         leaveApprovalChannel: process.env.LEAVE_APPROVAL_CHANNEL || '#leave-approval',
-        hrChannel: process.env.HR_CHANNEL || '#hr-notifications',
-        halfDayFormUrl: process.env.HALF_DAY_FORM_URL || 'https://forms.google.com/your-half-day-form-link',
-        plannedLeaveFormUrl: process.env.PLANNED_LEAVE_FORM_URL || 'https://forms.google.com/your-planned-leave-form-link'
+        hrChannel: process.env.HR_CHANNEL || '#hr-notifications'
     },
     notifications: {
         // Optional notification channel - only used for important admin notifications
@@ -589,15 +587,21 @@ app.command('/return', async ({ command, ack, say, client }) => {
         const today = Utils.getCurrentDate();
         const summary = await db.updateDailySummary(user_id, today);
 
-        // Check if total leave exceeds threshold (half-day scenario)
+        // Check if total leave exceeds threshold (now considered regular leave, not intermediate logout)
         if (Utils.exceedsThreshold(summary.totalLeave, config.bot.maxIntermediateHours)) {
             const totalLeaveFormatted = Utils.formatDuration(summary.totalLeave);
-            const halfDayMessage = Utils.formatHalfDayMessage(totalLeaveFormatted, config.bot.halfDayFormUrl);
+            const timeExceededMessage = Utils.formatTimeExceededMessage(totalLeaveFormatted);
             
             await client.chat.postEphemeral({
                 channel: command.channel_id,
                 user: user_id,
-                text: halfDayMessage
+                text: timeExceededMessage
+            });
+            
+            // Notify HR about time exceeded case
+            await client.chat.postMessage({
+                channel: config.bot.hrChannel,
+                text: `⚠️ *Time Exceeded - Mail Required*\n\n👤 *Employee:* ${userName}\n⏰ *Total time today:* ${totalLeaveFormatted}\n📝 *Status:* Time exceeded ${config.bot.maxIntermediateHours}h limit - no longer intermediate logout\n\n💼 *HR Action Required:* Please send mail to employee regarding time exceeded.`
             });
         } else {
             // Only suggest extra work if leave doesn't exceed half-day threshold
@@ -1732,8 +1736,14 @@ app.view('intermediate_logout_modal', async ({ ack, body, client, view }) => {
         
         successMessage += `\n\n📋 Your request has been sent to ${config.bot.leaveApprovalChannel} for manager approval.`;
         
+        // Send confirmation in the channel where user requested
+        await client.chat.postMessage({
+            channel: command.channel_id,
+            text: `📋 *Leave Request Submitted*\n\n${userName} has submitted an intermediate logout request and is awaiting approval.`
+        });
+        
         await client.chat.postEphemeral({
-            channel: config.bot.transparencyChannel,
+            channel: command.channel_id,
             user: user_id,
             text: successMessage
         });
@@ -2016,17 +2026,19 @@ app.view('planned_leave_modal', async ({ ack, body, client, view }) => {
         successMessage += `🔄 *Task Escalation:* ${taskEscalation}`;
         successMessage += `\n\n📋 Your request has been sent to ${config.bot.leaveApprovalChannel} for manager approval.`;
         
+        // Send confirmation in the channel where user requested
+        await client.chat.postMessage({
+            channel: command.channel_id,
+            text: `📋 *Leave Request Submitted*\n\n${userName} has submitted a planned leave request and is awaiting approval.`
+        });
+        
         await client.chat.postEphemeral({
-            channel: config.bot.leaveApprovalChannel,
+            channel: command.channel_id,
             user: user_id,
             text: successMessage
         });
         
-        // Send form link as DM
-        await client.chat.postMessage({
-            channel: user_id,
-            text: `📋 *Complete Your Official Leave Request*\n\nPlease fill out the official leave form to finalize your request:\n\n${config.bot.plannedLeaveFormUrl}\n\nThank you! 👍`
-        });
+        // No form system - removed as per user request
         
         // Optional admin notification
         if (config.notifications.notifyChannel) {
@@ -2452,7 +2464,7 @@ app.action('approve_leave', async ({ ack, body, client, action }) => {
             
             await client.chat.postMessage({
                 channel: leaveRequest.user_id,
-                text: `✅ *Leave Approved!*\n\nYour planned leave request has been approved by ${approverName}.\n📅 Dates: ${dateRange}\n📝 Reason: ${leaveRequest.reason}\n\nDon't forget to complete the official leave form if you haven't already!`
+                text: `✅ *Leave Approved!*\n\nYour planned leave request has been approved by ${approverName}.\n📅 Dates: ${dateRange}\n📝 Reason: ${leaveRequest.reason}`
             });
         }
         
@@ -2597,6 +2609,12 @@ cron.schedule('*/30 * * * *', async () => {
                     channel: session.user_id,
                     text: `⏰ *Friendly Reminder* 🙂\n\nHi ${userName}! Your planned leave time of *${plannedDuration}* has been exceeded.\nYou've been away for *${actualDuration}* so far.\n\n✅ *When you're back:*\n1. Use \`/return\` in ${config.bot.transparencyChannel} to mark your return\n2. Use \`/work-start\` to begin extra work to compensate\n\nNo worries - we all lose track of time sometimes! 😊`
                 });
+                
+                // Notify HR about time exceeded case
+                await app.client.chat.postMessage({
+                    channel: config.bot.hrChannel,
+                    text: `⚠️ *Time Exceeded - Mail Required*\n\n👤 *Employee:* ${userName}\n⏰ *Planned time:* ${plannedDuration}\n⏰ *Actual time:* ${actualDuration}\n📝 *Status:* Time exceeded during intermediate logout session\n\n💼 *HR Action Required:* Please send mail to employee regarding time exceeded.`
+                });
 
                 console.log(`⚠️ Sent time exceeded alert to ${userName}`);
 
@@ -2707,8 +2725,6 @@ cron.schedule('30 3 * * 1', async () => {
         console.log(`  • Leave approval access: Anyone in the ${config.bot.leaveApprovalChannel} channel`);
         console.log(`  • Admin notifications: ${config.notifications.notifyChannel ? '✅ ' + config.notifications.notifyChannel : '❌ Disabled'}`);
         console.log(`  • Admin password set: ${config.bot.adminPassword ? '✅' : '❌'}`);
-        console.log(`  • Half-day form: ${config.bot.halfDayFormUrl}`);
-        console.log(`  • Planned leave form: ${config.bot.plannedLeaveFormUrl}`);
         console.log(`  • Keepalive: ${RENDER_URL ? '✅ Enabled' : '❌ Disabled (add RENDER_URL env var)'}`);
         console.log('🚀 Available commands:');
         console.log('  /intermediate_logout <duration> <reason> - Start intermediate logout (requires approval)');
