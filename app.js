@@ -246,7 +246,7 @@ app.command('/intermediate_logout', async ({ command, ack, client }) => {
                     title: { type: 'plain_text', text: '⚠️ Already on Leave' },
                     submit: { type: 'plain_text', text: 'Extend Leave' },
                     close: { type: 'plain_text', text: 'Cancel' },
-                    private_metadata: JSON.stringify({ sessionId: activeSession.id, currentDuration, plannedDuration }),
+                    private_metadata: JSON.stringify({ sessionId: activeSession.id, currentDuration, plannedDuration, channelId: command.channel_id }),
                     blocks: [
                         {
                             type: 'section',
@@ -326,6 +326,7 @@ app.command('/intermediate_logout', async ({ command, ack, client }) => {
                 title: { type: 'plain_text', text: 'Intermediate Logout' },
                 submit: { type: 'plain_text', text: 'Start Leave' },
                 close: { type: 'plain_text', text: 'Cancel' },
+                private_metadata: command.channel_id,
                 blocks: [
                     {
                         type: 'section',
@@ -452,6 +453,7 @@ app.command('/planned', async ({ command, ack, client }) => {
                 title: { type: 'plain_text', text: 'Request Planned Leave' },
                 submit: { type: 'plain_text', text: 'Submit Request' },
                 close: { type: 'plain_text', text: 'Cancel' },
+                private_metadata: command.channel_id,
                 blocks: [
                     {
                         type: 'section',
@@ -1737,13 +1739,14 @@ app.view('intermediate_logout_modal', async ({ ack, body, client, view }) => {
         successMessage += `\n\n📋 Your request has been sent to ${config.bot.leaveApprovalChannel} for manager approval.`;
         
         // Send confirmation in the channel where user requested
+        const channelId = body.view.private_metadata;
         await client.chat.postMessage({
-            channel: command.channel_id,
+            channel: channelId,
             text: `📋 *Leave Request Submitted*\n\n${userName} has submitted an intermediate logout request and is awaiting approval.`
         });
         
         await client.chat.postEphemeral({
-            channel: command.channel_id,
+            channel: channelId,
             user: user_id,
             text: successMessage
         });
@@ -2027,13 +2030,14 @@ app.view('planned_leave_modal', async ({ ack, body, client, view }) => {
         successMessage += `\n\n📋 Your request has been sent to ${config.bot.leaveApprovalChannel} for manager approval.`;
         
         // Send confirmation in the channel where user requested
+        const channelId = body.view.private_metadata;
         await client.chat.postMessage({
-            channel: command.channel_id,
+            channel: channelId,
             text: `📋 *Leave Request Submitted*\n\n${userName} has submitted a planned leave request and is awaiting approval.`
         });
         
         await client.chat.postEphemeral({
-            channel: command.channel_id,
+            channel: channelId,
             user: user_id,
             text: successMessage
         });
