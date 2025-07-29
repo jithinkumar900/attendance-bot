@@ -2533,7 +2533,7 @@ app.action('approve_leave', async ({ ack, body, client, action }) => {
                     type: 'section',
                     text: {
                         type: 'mrkdwn',
-                        text: `✅ *Leave Request - ${leaveRequest.leave_type === 'intermediate' ? 'Intermediate Logout' : 'Planned Leave'}* (APPROVED)\n\n👤 *Employee:* ${leaveRequest.user_name}\n📝 *Reason:* ${leaveRequest.reason}\n\n✅ *Approved by:* ${approverName}\n⏰ *Approved at:* ${new Date().toLocaleString()}`
+                        text: `✅ *Leave Request - ${leaveRequest.leave_type === 'intermediate' ? 'Intermediate Logout' : 'Planned Leave'}* (APPROVED)\n\n👤 *Employee:* ${leaveRequest.user_name}\n📝 *Reason:* ${leaveRequest.reason}\n\n✅ *Approved by:* ${approverName}\n⏰ *Approved at:* ${Utils.getCurrentIST()}`
                     }
                 }
             ]
@@ -2543,7 +2543,7 @@ app.action('approve_leave', async ({ ack, body, client, action }) => {
         await client.chat.postMessage({
             channel: body.channel.id,
             thread_ts: body.message.ts,
-            text: `✅ *Approval Notification*\n\n${approverName} has approved this leave request at ${new Date().toLocaleString()}\n\n📋 <@${config.bot.hrTag}> - Please take appropriate steps for this approval.`
+            text: `✅ *Approval Notification*\n\n${approverName} has approved this leave request at ${Utils.getCurrentIST()}\n\n📋 <@${config.bot.hrTag}> - Please take appropriate steps for this approval.`
         });
         
     } catch (error) {
@@ -2610,7 +2610,7 @@ app.action('deny_leave', async ({ ack, body, client, action }) => {
                     type: 'section',
                     text: {
                         type: 'mrkdwn',
-                        text: `❌ *Leave Request - ${leaveRequest.leave_type === 'intermediate' ? 'Intermediate Logout' : 'Planned Leave'}* (DENIED)\n\n👤 *Employee:* ${leaveRequest.user_name}\n📝 *Reason:* ${leaveRequest.reason}\n\n❌ *Denied by:* ${denierName}\n⏰ *Denied at:* ${new Date().toLocaleString()}`
+                        text: `❌ *Leave Request - ${leaveRequest.leave_type === 'intermediate' ? 'Intermediate Logout' : 'Planned Leave'}* (DENIED)\n\n👤 *Employee:* ${leaveRequest.user_name}\n📝 *Reason:* ${leaveRequest.reason}\n\n❌ *Denied by:* ${denierName}\n⏰ *Denied at:* ${Utils.getCurrentIST()}`
                     }
                 }
             ]
@@ -2620,7 +2620,7 @@ app.action('deny_leave', async ({ ack, body, client, action }) => {
         await client.chat.postMessage({
             channel: body.channel.id,
             thread_ts: body.message.ts,
-            text: `❌ *Denial Notification*\n\n${denierName} has denied this leave request at ${new Date().toLocaleString()}\n\n📋 <@${config.bot.hrTag}> - Please take appropriate steps for this denial.`
+            text: `❌ *Denial Notification*\n\n${denierName} has denied this leave request at ${Utils.getCurrentIST()}\n\n📋 <@${config.bot.hrTag}> - Please take appropriate steps for this denial.`
         });
         
     } catch (error) {
@@ -2637,18 +2637,16 @@ app.action('deny_leave', async ({ ack, body, client, action }) => {
 // AUTOMATIC TIME EXCEEDED CHECKS
 // ================================
 
-// Send polite warning at 2.4 hours (144 minutes)
-cron.schedule('* * * * *', async () => {
+// Send gentle reminders every 30 minutes after planned time until 2.4 hours
+cron.schedule('*/30 * * * *', async () => {
     try {
-        // Get sessions that are at exactly 2.4 hours (144 minutes) - check within 1 minute window
+        // Get sessions that have exceeded planned time but haven't reached 2.4 hours
         const activeSession = await new Promise((resolve, reject) => {
             db.db.all(
                 `SELECT * FROM leave_sessions 
                 WHERE end_time IS NULL 
-                AND datetime('now') BETWEEN 
-                    datetime(start_time, '+143 minutes') AND 
-                    datetime(start_time, '+145 minutes')
-                AND reason NOT LIKE '%[WARNING_SENT]%'`,
+                AND datetime('now') > datetime(start_time, '+' || planned_duration || ' minutes')
+                AND datetime('now') < datetime(start_time, '+144 minutes')`,
                 (err, sessions) => {
                     if (err) reject(err);
                     else resolve(sessions);
@@ -2661,24 +2659,81 @@ cron.schedule('* * * * *', async () => {
                 const userInfo = await app.client.users.info({ user: session.user_id });
                 const userName = userInfo.user.real_name || userInfo.user.name;
                 const plannedDuration = Utils.formatDuration(session.planned_duration);
+                const currentDuration = Math.round((new Date() - new Date(session.start_time)) / (1000 * 60));
+                const actualDuration = Utils.formatDuration(currentDuration);
 
-                // Send polite warning at 2.4 hours
+                // Check if we've already sent a reminder in the last 25 minutes to avoid spam
+                const lastReminderKey = `REMINDER_${session.id}_${Math.floor(currentDuration / 30)}`;
+                if (session.reason && session.reason.includes(lastReminderKey)) {
+                    continue; // Skip if we've already sent this reminder
+                }
+
+                // Send gentle reminder
                 await app.client.chat.postMessage({
                     channel: session.user_id,
-                    text: `🕐 *Gentle Reminder* 😊\n\nHi ${userName}! Just a friendly heads-up that you've been on intermediate logout for about 2.4 hours.\n\n📝 *Just so you know:* If you're away for more than 2.5 hours total, this will automatically be processed as half-day leave instead of intermediate logout.\n\n✅ *No action needed right now* - just wanted to keep you informed! When you're back, use \`/return\` to check in.\n\nHope everything is going well! 🌟`
+                    text: `🕐 *Gentle Reminder* 😊\n\nHi ${userName}! Just a friendly check-in - you've been on intermediate logout for ${actualDuration}, which is a bit longer than your planned ${plannedDuration}.\n\n✅ *No worries at all!* Things happen and we understand.\n\n📝 *Just so you know:* When you're ready, use \`/return\` to check back in. If you're away for more than 2.5 hours total, it'll automatically be processed as half-day leave.\n\nHope everything is going well! 🌟`
                 });
 
-                console.log(`💡 Sent 2.4-hour gentle reminder to ${userName}`);
+                console.log(`💬 Sent gentle reminder to ${userName} (${actualDuration} elapsed)`);
 
-                // Mark warning as sent to prevent duplicate messages
+                // Mark this specific reminder as sent
                 db.db.run(
-                    `UPDATE leave_sessions SET reason = reason || ' [WARNING_SENT]' 
+                    `UPDATE leave_sessions SET reason = reason || ' [${lastReminderKey}]' 
                     WHERE id = ?`,
                     [session.id]
                 );
 
             } catch (error) {
-                console.error(`Error sending warning to user ${session.user_id}:`, error);
+                console.error(`Error sending reminder to user ${session.user_id}:`, error);
+            }
+        }
+
+    } catch (error) {
+        console.error('Error in reminder check:', error);
+    }
+});
+
+// Send polite warning at 2.4 hours (144 minutes)  
+cron.schedule('* * * * *', async () => {
+    try {
+        // Get sessions that are at exactly 2.4 hours (144 minutes) - check within 1 minute window
+        const activeSession = await new Promise((resolve, reject) => {
+            db.db.all(
+                `SELECT * FROM leave_sessions 
+                WHERE end_time IS NULL 
+                AND datetime('now') BETWEEN 
+                    datetime(start_time, '+143 minutes') AND 
+                    datetime(start_time, '+145 minutes')
+                AND reason NOT LIKE '%[FINAL_WARNING_SENT]%'`,
+                (err, sessions) => {
+                    if (err) reject(err);
+                    else resolve(sessions);
+                }
+            );
+        });
+
+        for (const session of activeSession) {
+            try {
+                const userInfo = await app.client.users.info({ user: session.user_id });
+                const userName = userInfo.user.real_name || userInfo.user.name;
+
+                // Send polite final warning at 2.4 hours
+                await app.client.chat.postMessage({
+                    channel: session.user_id,
+                    text: `🕐 *Final Gentle Reminder* 😊\n\nHi ${userName}! You've been on intermediate logout for about 2.4 hours now.\n\n📝 *Just a heads-up:* In about 6 more minutes (at 2.5 hours), this will automatically be processed as half-day leave instead of intermediate logout.\n\n✅ *Totally fine either way!* Just wanted to keep you informed. When you're ready, use \`/return\` to check back in.\n\nHope everything is going smoothly! 🌟`
+                });
+
+                console.log(`⚠️ Sent 2.4-hour final reminder to ${userName}`);
+
+                // Mark final warning as sent to prevent duplicate messages
+                db.db.run(
+                    `UPDATE leave_sessions SET reason = reason || ' [FINAL_WARNING_SENT]' 
+                    WHERE id = ?`,
+                    [session.id]
+                );
+
+            } catch (error) {
+                console.error(`Error sending final warning to user ${session.user_id}:`, error);
             }
         }
 
