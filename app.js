@@ -836,6 +836,22 @@ app.command('/review', async ({ command, ack, say, client }) => {
         // Get completed summary
         const summary = await db.getUserDailySummary(user_id, today);
         
+        // Get future approved leave requests
+        const futureLeave = await new Promise((resolve, reject) => {
+            db.db.all(
+                `SELECT * FROM leave_requests 
+                WHERE user_id = ? 
+                AND status = 'approved' 
+                AND (start_date > date('now', 'localtime') OR (start_date = date('now', 'localtime') AND leave_type = 'planned'))
+                ORDER BY start_date ASC`,
+                [user_id],
+                (err, requests) => {
+                    if (err) reject(err);
+                    else resolve(requests || []);
+                }
+            );
+        });
+        
         // Build status message
         let statusMessage = "📊 *Today's Status*\n\n";
         
@@ -871,6 +887,22 @@ app.command('/review', async ({ command, ack, say, client }) => {
             statusMessage += `• Pending: ${Utils.formatDuration(summary.pending_extra_work_minutes)}\n\n`;
         }
 
+        // Add future approved leave requests
+        if (futureLeave.length > 0) {
+            statusMessage += `📅 *Upcoming Approved Leave*\n`;
+            futureLeave.forEach(request => {
+                if (request.leave_type === 'planned') {
+                    const startDate = Utils.formatDate(request.start_date);
+                    const endDate = Utils.formatDate(request.end_date);
+                    const dateRange = startDate === endDate ? startDate : `${startDate} - ${endDate}`;
+                    statusMessage += `• ${dateRange}: ${Utils.formatLeaveType(request.leave_duration_days > 1 ? 'full_day' : 'half_day')} - ${request.reason}\n`;
+                } else {
+                    statusMessage += `• Intermediate Logout: ${Utils.formatDuration(request.planned_duration)} - ${request.reason}\n`;
+                }
+            });
+            statusMessage += `\n`;
+        }
+
         // Add recent extra work sessions with descriptions
         const recentExtraWork = await db.getUserRecentExtraWorkSessions(user_id, 7);
         if (recentExtraWork.length > 0) {
@@ -887,8 +919,8 @@ app.command('/review', async ({ command, ack, say, client }) => {
             statusMessage += `\n`;
         }
         
-        // If no activity at all
-        if (!activeLeave && !activeExtraWork && (!summary || (summary.total_leave_minutes === 0 && summary.total_extra_work_minutes === 0))) {
+        // If no activity at all (including no future leave)
+        if (!activeLeave && !activeExtraWork && futureLeave.length === 0 && (!summary || (summary.total_leave_minutes === 0 && summary.total_extra_work_minutes === 0))) {
             statusMessage += "✅ *All good! No leave or extra work today.*";
         }
         
@@ -1006,11 +1038,28 @@ async function getLiveAdminStatus() {
 
         const recentActivity = await db.getAdminReport(yesterdayStr, Utils.getCurrentDate());
 
+        // Get future approved leave requests (next 30 days)
+        const futureLeaveRequests = await new Promise((resolve, reject) => {
+            db.db.all(
+                `SELECT lr.*, u.name as user_name FROM leave_requests lr
+                JOIN users u ON lr.user_id = u.id
+                WHERE lr.status = 'approved' 
+                AND lr.start_date > date('now', 'localtime')
+                AND lr.start_date <= date('now', 'localtime', '+30 days')
+                ORDER BY lr.start_date ASC`,
+                (err, requests) => {
+                    if (err) reject(err);
+                    else resolve(requests || []);
+                }
+            );
+        });
+
         return {
             activeLeave,
             activeExtraWork,
             pendingWork,
-            recentActivity
+            recentActivity,
+            futureLeaveRequests
         };
     } catch (error) {
         console.error('Error getting live admin status:', error);

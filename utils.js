@@ -490,13 +490,14 @@ class Utils {
 
     // Format main admin dashboard
     static formatAdminDashboard(liveStatus) {
-        const { activeLeave, activeExtraWork, pendingWork, recentActivity } = liveStatus;
+        const { activeLeave, activeExtraWork, pendingWork, recentActivity, futureLeaveRequests } = liveStatus;
         
         // Quick stats
         const stats = [
             `🔴 Active Leave: ${activeLeave.length}`,
             `🟢 Active Work: ${activeExtraWork.length}`,
             `⚠️ Pending Work: ${pendingWork.length}`,
+            `📅 Future Leave: ${futureLeaveRequests ? futureLeaveRequests.length : 0}`,
             `📊 Recent Activity: ${recentActivity.length}`
         ].join(' • ');
 
@@ -553,7 +554,7 @@ class Utils {
 
     // Format live status view
     static formatLiveStatus(liveStatus) {
-        const { activeLeave, activeExtraWork, pendingWork } = liveStatus;
+        const { activeLeave, activeExtraWork, pendingWork, futureLeaveRequests } = liveStatus;
         let text = "🚨 *LIVE STATUS DASHBOARD*\n\n";
 
         // Active Leave Sessions
@@ -602,8 +603,25 @@ class Utils {
             text += "\n";
         }
 
-        if (activeLeave.length === 0 && activeExtraWork.length === 0 && pendingWork.length === 0) {
-            text += "✅ *All quiet! No active sessions or pending work.*\n";
+        // Future Approved Leave Requests
+        if (futureLeaveRequests && futureLeaveRequests.length > 0) {
+            text += "📅 *UPCOMING APPROVED LEAVE (Next 30 Days):*\n";
+            futureLeaveRequests.forEach(request => {
+                if (request.leave_type === 'planned') {
+                    const startDate = this.formatDate(request.start_date);
+                    const endDate = this.formatDate(request.end_date);
+                    const dateRange = startDate === endDate ? startDate : `${startDate} - ${endDate}`;
+                    const duration = request.leave_duration_days > 1 ? `${request.leave_duration_days} days` : this.formatLeaveType(request.leave_duration_days === 1 ? 'full_day' : 'half_day');
+                    text += `• *${request.user_name}* - ${dateRange} (${duration}) - ${request.reason}\n`;
+                } else {
+                    text += `• *${request.user_name}* - Intermediate Logout: ${this.formatDuration(request.planned_duration)} - ${request.reason}\n`;
+                }
+            });
+            text += "\n";
+        }
+
+        if (activeLeave.length === 0 && activeExtraWork.length === 0 && pendingWork.length === 0 && (!futureLeaveRequests || futureLeaveRequests.length === 0)) {
+            text += "✅ *All quiet! No active sessions, pending work, or upcoming leave.*\n";
         }
 
         return {
@@ -833,7 +851,7 @@ class Utils {
 
     // Create Live Status Modal
     static createLiveStatusModal(liveStatus) {
-        const { activeLeave, activeExtraWork, pendingWork } = liveStatus;
+        const { activeLeave, activeExtraWork, pendingWork, futureLeaveRequests } = liveStatus;
         
         const blocks = [
             {
@@ -938,13 +956,47 @@ class Utils {
             });
         }
 
-        // All clear message
-        if (activeLeave.length === 0 && activeExtraWork.length === 0 && pendingWork.length === 0) {
+        // Future Approved Leave Requests
+        if (futureLeaveRequests && futureLeaveRequests.length > 0) {
             blocks.push({
                 type: "section",
                 text: {
                     type: "mrkdwn",
-                    text: "✅ *All quiet! No active sessions or pending work.*"
+                    text: `📅 *UPCOMING APPROVED LEAVE (${futureLeaveRequests.length}):*`
+                }
+            });
+            
+            futureLeaveRequests.forEach(request => {
+                let displayText = "";
+                if (request.leave_type === 'planned') {
+                    const startDate = this.formatDate(request.start_date);
+                    const endDate = this.formatDate(request.end_date);
+                    const dateRange = startDate === endDate ? startDate : `${startDate} - ${endDate}`;
+                    const duration = request.leave_duration_days > 1 ? `${request.leave_duration_days} days` : this.formatLeaveType(request.leave_duration_days === 1 ? 'full_day' : 'half_day');
+                    displayText = `👤 *${request.user_name}* • ${dateRange} (${duration}) • ${request.reason}`;
+                } else {
+                    displayText = `👤 *${request.user_name}* • Intermediate Logout: ${this.formatDuration(request.planned_duration)} • ${request.reason}`;
+                }
+                
+                blocks.push({
+                    type: "context",
+                    elements: [
+                        {
+                            type: "mrkdwn",
+                            text: displayText
+                        }
+                    ]
+                });
+            });
+        }
+
+        // All clear message
+        if (activeLeave.length === 0 && activeExtraWork.length === 0 && pendingWork.length === 0 && (!futureLeaveRequests || futureLeaveRequests.length === 0)) {
+            blocks.push({
+                type: "section",
+                text: {
+                    type: "mrkdwn",
+                    text: "✅ *All quiet! No active sessions, pending work, or upcoming leave.*"
                 }
             });
         }
