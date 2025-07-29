@@ -36,6 +36,36 @@ const app = new App({
     port: process.env.PORT || 3000
 });
 
+// Handle Socket Mode connection errors gracefully
+app.receiver.client.on('error', (error) => {
+    if (error.message && error.message.includes('server explicit disconnect')) {
+        console.log('🔄 Slack connection interrupted, will reconnect automatically...');
+    } else {
+        console.error('⚠️ Socket Mode error:', error);
+    }
+});
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+    if (reason && reason.toString().includes('server explicit disconnect')) {
+        console.log('🔄 Slack disconnection handled, continuing...');
+    } else {
+        console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+    }
+});
+
+// Handle uncaught exceptions (including the finity state machine error)
+process.on('uncaughtException', (error) => {
+    if (error.message && error.message.includes('server explicit disconnect')) {
+        console.log('🔄 Socket disconnect error caught, bot will restart automatically...');
+        // Don't exit on this specific error, let Render restart the service
+        return;
+    } else {
+        console.error('❌ Uncaught Exception:', error);
+        process.exit(1);
+    }
+});
+
 // Initialize database
 const db = new Database(process.env.DATABASE_PATH);
 
@@ -2779,7 +2809,8 @@ cron.schedule('30 3 * * 1', async () => {
 // APP START
 // ================================
 
-(async () => {
+// Startup function with retry logic
+async function startApp(retryCount = 0) {
     try {
         // Start your app
         await app.start();
@@ -2804,20 +2835,38 @@ cron.schedule('30 3 * * 1', async () => {
         console.log('  /admin <password> - Admin report');
         
     } catch (error) {
-        console.error('Error starting the app:', error);
+        if (error.message && error.message.includes('server explicit disconnect') && retryCount < 3) {
+            console.log(`🔄 Socket connection failed, retrying in 5 seconds... (attempt ${retryCount + 1}/3)`);
+            setTimeout(() => startApp(retryCount + 1), 5000);
+        } else {
+            console.error('❌ Error starting the app:', error);
+            process.exit(1);
+        }
+    }
+}
+
+// Start the app
+startApp();
+
+// Graceful shutdown handling
+const gracefulShutdown = (signal) => {
+    console.log(`🛑 Received ${signal}, gracefully shutting down...`);
+    try {
+        if (app && app.receiver && app.receiver.client) {
+            app.receiver.client.disconnect();
+        }
+        if (db) {
+            db.close();
+        }
+        console.log('✅ Shutdown complete');
+        process.exit(0);
+    } catch (error) {
+        console.error('❌ Error during shutdown:', error);
         process.exit(1);
     }
-})();
+};
 
-// Graceful shutdown
-process.on('SIGINT', () => {
-    console.log('\nShutting down bot...');
-    db.close();
-    process.exit(0);
-});
-
-process.on('SIGTERM', () => {
-    console.log('\nShutting down bot...');
-    db.close();
-    process.exit(0);
-}); 
+// Listen for shutdown signals
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+ 
