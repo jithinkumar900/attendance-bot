@@ -36,10 +36,19 @@ const app = new App({
     port: process.env.PORT || 3000
 });
 
+// Connection state tracking to avoid excessive logging
+let lastReconnectTime = 0;
+let reconnectCount = 0;
+
 // Handle Socket Mode connection errors gracefully
 app.receiver.client.on('error', (error) => {
     if (error.message && error.message.includes('server explicit disconnect')) {
-        console.log('🔄 Slack connection interrupted, will reconnect automatically...');
+        const now = Date.now();
+        if (now - lastReconnectTime > 30000) { // Only log every 30 seconds
+            console.log('🔄 Slack connection interrupted, will reconnect automatically...');
+            lastReconnectTime = now;
+            reconnectCount = 0;
+        }
     } else {
         console.error('⚠️ Socket Mode error:', error);
     }
@@ -48,7 +57,13 @@ app.receiver.client.on('error', (error) => {
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (reason, promise) => {
     if (reason && reason.toString().includes('server explicit disconnect')) {
-        console.log('🔄 Slack disconnection handled, continuing...');
+        const now = Date.now();
+        reconnectCount++;
+        if (now - lastReconnectTime > 30000) { // Only log every 30 seconds
+            console.log(`🔄 Slack disconnection handled, continuing... (${reconnectCount} reconnects)`);
+            lastReconnectTime = now;
+            reconnectCount = 0;
+        }
     } else {
         console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
     }
@@ -657,14 +672,17 @@ app.command('/return', async ({ command, ack, say, client }) => {
         });
 
     } catch (error) {
-        console.error('Error in return:', error);
         if (error.message.includes('No active leave session')) {
+            // This is not an error, just user trying to return without active session
+            console.log(`ℹ️ User ${command.user_id} tried to return without active session`);
             await client.chat.postEphemeral({
                 channel: command.channel_id,
                 user: command.user_id,
-                text: "You don't have an active leave session to end."
+                text: "ℹ️ You don't have an active leave session to end. Use `/review` to check your current status."
             });
         } else {
+            // This is an actual error
+            console.error('Error in return:', error);
             await client.chat.postEphemeral({
                 channel: command.channel_id,
                 user: command.user_id,
@@ -2145,14 +2163,16 @@ app.view('work_end_modal', async ({ ack, body, client, view }) => {
         });
 
     } catch (error) {
-        console.error('Error in work end modal:', error);
-        
         if (error.message.includes('No active extra work session')) {
+            // This is not an error, just user trying to end work without active session
+            console.log(`ℹ️ User ${body.user.id} tried to end work without active session`);
             await client.chat.postMessage({
                 channel: body.user.id,
-                text: "❌ No active extra work session found. You may have already ended it."
+                text: "ℹ️ No active extra work session found. You may have already ended it or never started one."
             });
         } else {
+            // This is an actual error
+            console.error('Error in work end modal:', error);
             await client.chat.postMessage({
                 channel: body.user.id,
                 text: "Sorry, there was an error ending your extra work session. Please try again."
