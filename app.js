@@ -15,7 +15,8 @@ const config = {
         adminPassword: process.env.ADMIN_PASSWORD || 'admin123',
         transparencyChannel: process.env.TRANSPARENCY_CHANNEL || '#intermediate-logout',
         leaveApprovalChannel: process.env.LEAVE_APPROVAL_CHANNEL || '#leave-approval',
-        hrChannel: process.env.HR_CHANNEL || '#hr-notifications'
+        hrTag: process.env.HR_TAG || 'Anju Maria',
+        leaveApprovalTag: process.env.LEAVE_APPROVAL_TAG || 'Jesna S'
     },
     notifications: {
         // Optional notification channel - only used for important admin notifications
@@ -600,20 +601,20 @@ app.command('/return', async ({ command, ack, say, client }) => {
                 text: timeExceededMessage
             });
             
-            // Notify HR about time exceeded case
+            // Inform HR about conversion to half-day leave  
             await client.chat.postMessage({
-                channel: config.bot.hrChannel,
-                text: `⚠️ *Time Exceeded - Mail Required*\n\n👤 *Employee:* ${userName}\n⏰ *Total time today:* ${totalLeaveFormatted}\n📝 *Status:* Time exceeded ${config.bot.maxIntermediateHours}h limit - no longer intermediate logout\n\n💼 *HR Action Required:* Please send mail to employee regarding time exceeded.`
+                channel: config.bot.leaveApprovalChannel,
+                text: `ℹ️ *Half Day Leave Processed*\n\n👤 *Employee:* ${userName}\n⏰ *Total time today:* ${totalLeaveFormatted}\n📝 *Status:* Processed as half-day leave (exceeded ${config.bot.maxIntermediateHours}h intermediate logout limit)\n\n📋 <@${config.bot.hrTag}> - FYI: This has been automatically processed as half-day leave.`
             });
         } else {
             // Only suggest extra work if leave doesn't exceed half-day threshold
             if (session.actualDuration > session.planned_duration) {
                 const exceededBy = Utils.formatDuration(session.actualDuration - session.planned_duration);
                 
-                // Send DM about time exceeded only if we're not in half-day territory
+                // Send polite DM about extra time taken
                 await client.chat.postMessage({
                     channel: user_id,
-                    text: `😊 *Time Summary*\n\nHi! You planned to be away for *${plannedDuration}* but were actually away for *${actualDuration}*.\nExtra time taken: *${exceededBy}*\n\n🔄 *Next Steps:*\n1. Use \`/work-start\` to begin ${exceededBy} of extra work\n2. I'll help track your progress and auto-complete when done!\n\nThanks for being transparent! 🙏`
+                    text: `😊 *Time Summary*\n\nHi! You planned to be away for *${plannedDuration}* but were actually away for *${actualDuration}*.\nExtra time taken: *${exceededBy}*\n\n🔄 *Next Steps:*\n1. When convenient, use \`/work-start\` to begin ${exceededBy} of extra work\n2. I'll help track your progress!\n\nThanks for being transparent! 🙏`
                 });
             }
         }
@@ -2488,10 +2489,11 @@ app.action('approve_leave', async ({ ack, body, client, action }) => {
             ]
         });
         
-        // Notify HR
+        // Send threaded reply for leave approval notification  
         await client.chat.postMessage({
-            channel: config.bot.hrChannel,
-            text: `✅ *Leave Request Approved*\n\n👤 *Employee:* ${leaveRequest.user_name}\n📋 *Type:* ${leaveRequest.leave_type === 'intermediate' ? 'Intermediate Logout' : 'Planned Leave'}\n📝 *Reason:* ${leaveRequest.reason}\n✅ *Approved by:* ${approverName}\n⏰ *Approved at:* ${new Date().toLocaleString()}\n\n💼 *HR Action Required:* Please send official confirmation email to employee.`
+            channel: body.channel.id,
+            thread_ts: body.message.ts,
+            text: `✅ *Approval Notification*\n\n${approverName} has approved this leave request at ${new Date().toLocaleString()}\n\n📋 <@${config.bot.leaveApprovalTag}> - Please take appropriate steps for this approval.`
         });
         
     } catch (error) {
@@ -2564,10 +2566,11 @@ app.action('deny_leave', async ({ ack, body, client, action }) => {
             ]
         });
         
-        // Notify HR
+        // Send threaded reply for leave approval notification
         await client.chat.postMessage({
-            channel: config.bot.hrChannel,
-            text: `❌ *Leave Request Denied*\n\n👤 *Employee:* ${leaveRequest.user_name}\n📋 *Type:* ${leaveRequest.leave_type === 'intermediate' ? 'Intermediate Logout' : 'Planned Leave'}\n📝 *Reason:* ${leaveRequest.reason}\n❌ *Denied by:* ${denierName}\n⏰ *Denied at:* ${new Date().toLocaleString()}\n\n💼 *HR Action Required:* Please send official denial email to employee.`
+            channel: body.channel.id,
+            thread_ts: body.message.ts,
+            text: `❌ *Denial Notification*\n\n${denierName} has denied this leave request at ${new Date().toLocaleString()}\n\n📋 <@${config.bot.leaveApprovalTag}> - Please take appropriate steps for this denial.`
         });
         
     } catch (error) {
@@ -2584,15 +2587,18 @@ app.action('deny_leave', async ({ ack, body, client, action }) => {
 // AUTOMATIC TIME EXCEEDED CHECKS
 // ================================
 
-// Check for exceeded leave times every 30 minutes
-cron.schedule('*/30 * * * *', async () => {
+// Send polite warning at 2.4 hours (144 minutes)
+cron.schedule('* * * * *', async () => {
     try {
-        // Get all active leave sessions
+        // Get sessions that are at exactly 2.4 hours (144 minutes) - check within 1 minute window
         const activeSession = await new Promise((resolve, reject) => {
             db.db.all(
                 `SELECT * FROM leave_sessions 
                 WHERE end_time IS NULL 
-                AND datetime('now') > datetime(start_time, '+' || planned_duration || ' minutes')`,
+                AND datetime('now') BETWEEN 
+                    datetime(start_time, '+143 minutes') AND 
+                    datetime(start_time, '+145 minutes')
+                AND reason NOT LIKE '%[WARNING_SENT]%'`,
                 (err, sessions) => {
                     if (err) reject(err);
                     else resolve(sessions);
@@ -2605,37 +2611,94 @@ cron.schedule('*/30 * * * *', async () => {
                 const userInfo = await app.client.users.info({ user: session.user_id });
                 const userName = userInfo.user.real_name || userInfo.user.name;
                 const plannedDuration = Utils.formatDuration(session.planned_duration);
-                const currentDuration = Math.round((new Date() - new Date(session.start_time)) / (1000 * 60));
-                const actualDuration = Utils.formatDuration(currentDuration);
 
-                // Send DM notification about time exceeded
+                // Send polite warning at 2.4 hours
                 await app.client.chat.postMessage({
                     channel: session.user_id,
-                    text: `⏰ *Friendly Reminder* 🙂\n\nHi ${userName}! Your planned leave time of *${plannedDuration}* has been exceeded.\nYou've been away for *${actualDuration}* so far.\n\n✅ *When you're back:*\n1. Use \`/return\` in ${config.bot.transparencyChannel} to mark your return\n2. Use \`/work-start\` to begin extra work to compensate\n\nNo worries - we all lose track of time sometimes! 😊`
-                });
-                
-                // Notify HR about time exceeded case
-                await app.client.chat.postMessage({
-                    channel: config.bot.hrChannel,
-                    text: `⚠️ *Time Exceeded - Mail Required*\n\n👤 *Employee:* ${userName}\n⏰ *Planned time:* ${plannedDuration}\n⏰ *Actual time:* ${actualDuration}\n📝 *Status:* Time exceeded during intermediate logout session\n\n💼 *HR Action Required:* Please send mail to employee regarding time exceeded.`
+                    text: `🕐 *Gentle Reminder* 😊\n\nHi ${userName}! Just a friendly heads-up that you've been on intermediate logout for about 2.4 hours.\n\n📝 *Just so you know:* If you're away for more than 2.5 hours total, this will automatically be processed as half-day leave instead of intermediate logout.\n\n✅ *No action needed right now* - just wanted to keep you informed! When you're back, use \`/return\` to check in.\n\nHope everything is going well! 🌟`
                 });
 
-                console.log(`⚠️ Sent time exceeded alert to ${userName}`);
+                console.log(`💡 Sent 2.4-hour gentle reminder to ${userName}`);
 
-                // Mark this session as notified (add a flag to prevent spam)
+                // Mark warning as sent to prevent duplicate messages
                 db.db.run(
-                    `UPDATE leave_sessions SET reason = reason || ' [NOTIFIED]' 
-                    WHERE id = ? AND reason NOT LIKE '%[NOTIFIED]%'`,
+                    `UPDATE leave_sessions SET reason = reason || ' [WARNING_SENT]' 
+                    WHERE id = ?`,
                     [session.id]
                 );
 
             } catch (error) {
-                console.error(`Error sending time exceeded alert to user ${session.user_id}:`, error);
+                console.error(`Error sending warning to user ${session.user_id}:`, error);
             }
         }
 
     } catch (error) {
-        console.error('Error in time exceeded check:', error);
+        console.error('Error in 2.4-hour warning check:', error);
+    }
+});
+
+// Auto-convert to half-day leave when sessions exceed 2.5 hours
+cron.schedule('*/5 * * * *', async () => {
+    try {
+        // Get sessions that have exceeded 2.5 hours and are still active
+        const exceededSessions = await new Promise((resolve, reject) => {
+            db.db.all(
+                `SELECT * FROM leave_sessions 
+                WHERE end_time IS NULL 
+                AND datetime('now') > datetime(start_time, '+150 minutes')
+                AND reason NOT LIKE '%[AUTO_CONVERTED]%'`,
+                (err, sessions) => {
+                    if (err) reject(err);
+                    else resolve(sessions);
+                }
+            );
+        });
+
+        for (const session of exceededSessions) {
+            try {
+                const userInfo = await app.client.users.info({ user: session.user_id });
+                const userName = userInfo.user.real_name || userInfo.user.name;
+                const currentDuration = Math.round((new Date() - new Date(session.start_time)) / (1000 * 60));
+                const actualDuration = Utils.formatDuration(currentDuration);
+
+                // Auto-end the session
+                const endedSession = await db.endLeaveSession(session.user_id);
+
+                // Send polite notification to employee
+                await app.client.chat.postMessage({
+                    channel: session.user_id,
+                    text: `🏠 *Auto Check-In Complete* 😊\n\nHi ${userName}! Since you've been away for ${actualDuration}, we've automatically checked you in and processed this as half-day leave.\n\n📝 *No worries at all* - this happens! Your time has been properly recorded.\n\n✅ *All set* - no further action needed from you.\n\nHope you had a productive time away! 🌟`
+                });
+
+                // Update transparency channel
+                const message = Utils.formatLeaveEndMessage(userName, actualDuration);
+                await app.client.chat.postMessage({
+                    channel: config.bot.transparencyChannel,
+                    text: `${message} *(Auto-converted to half-day leave)*`
+                });
+
+                // Inform HR about automatic conversion
+                await app.client.chat.postMessage({
+                    channel: config.bot.leaveApprovalChannel,
+                    text: `ℹ️ *Auto-Conversion Complete - Half Day Leave*\n\n👤 *Employee:* ${userName}\n⏰ *Total time:* ${actualDuration}\n📝 *Status:* Automatically converted to half-day leave (exceeded 2.5h limit)\n\n📋 <@${config.bot.hrTag}> - FYI: This has been automatically processed as half-day leave.`
+                });
+
+                console.log(`🔄 Auto-converted ${userName}'s session to half-day leave`);
+
+                // Mark as auto-converted
+                db.db.run(
+                    `UPDATE leave_sessions SET reason = reason || ' [AUTO_CONVERTED]' 
+                    WHERE id = ?`,
+                    [session.id]
+                );
+
+            } catch (error) {
+                console.error(`Error auto-converting session for user ${session.user_id}:`, error);
+            }
+        }
+
+    } catch (error) {
+        console.error('Error in auto-conversion check:', error);
     }
 });
 
@@ -2725,8 +2788,9 @@ cron.schedule('30 3 * * 1', async () => {
         console.log(`  • Max intermediate hours: ${config.bot.maxIntermediateHours}h`);
         console.log(`  • Transparency channel: ${config.bot.transparencyChannel}`);
         console.log(`  • Leave approval channel: ${config.bot.leaveApprovalChannel}`);
-        console.log(`  • HR notifications channel: ${config.bot.hrChannel}`);
         console.log(`  • Leave approval access: Anyone in the ${config.bot.leaveApprovalChannel} channel`);
+        console.log(`  • Leave approval tag: @${config.bot.leaveApprovalTag}`);
+        console.log(`  • HR tag: @${config.bot.hrTag}`);
         console.log(`  • Admin notifications: ${config.notifications.notifyChannel ? '✅ ' + config.notifications.notifyChannel : '❌ Disabled'}`);
         console.log(`  • Admin password set: ${config.bot.adminPassword ? '✅' : '❌'}`);
         console.log(`  • Keepalive: ${RENDER_URL ? '✅ Enabled' : '❌ Disabled (add RENDER_URL env var)'}`);

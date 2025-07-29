@@ -5,12 +5,11 @@
     "extraWorkDeadlineDays": 7,
     "adminPassword": "admin123",
     "transparencyChannel": "#intermediate-logout",
-    "leaveApprovalChannel": "#leave-approval",
-    "hrChannel": "#hr-notifications"
+    "leaveApprovalChannel": "#leave-approval"
   },
   "notifications": {
     "notifyUsers": ["@hr-team", "@manager"],
-    "notifyChannels": ["#hr-notifications"],
+    "notifyChannels": ["#leave-approval"],
     "hourlyPrompts": true,
     "dailySummary": true,
     "weeklyReminders": true

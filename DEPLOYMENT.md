@@ -15,8 +15,10 @@ MAX_INTERMEDIATE_HOURS=2.5
 WORKING_HOURS_PER_DAY=8
 EXTRA_WORK_DEADLINE_DAYS=7
 ADMIN_PASSWORD=your-secure-password
-TRANSPARENCY_CHANNEL=#unplanned-leave
-HALF_DAY_FORM_URL=https://forms.google.com/your-form-link
+TRANSPARENCY_CHANNEL=#intermediate-logout
+LEAVE_APPROVAL_CHANNEL=#leave-approval
+HR_TAG=Anju Maria
+LEAVE_APPROVAL_TAG=Jesna S
 ```
 
 ### **Notifications (Optional)**
@@ -68,7 +70,9 @@ SLACK_APP_TOKEN=xapp-your-actual-token
 ```
 ADMIN_PASSWORD=MySecurePassword123
 TRANSPARENCY_CHANNEL=#company-leave
-HALF_DAY_FORM_URL=https://forms.google.com/d/your-form-id/viewform
+LEAVE_APPROVAL_CHANNEL=#leave-approvals
+HR_TAG=Your HR Person
+LEAVE_APPROVAL_TAG=Your Manager
 NOTIFY_USERS=@hr-team,@ceo
 MAX_INTERMEDIATE_HOURS=3.0
 ```
@@ -81,7 +85,8 @@ Click "Create Web Service" and wait for deployment!
 ## ✅ **Benefits of Environment Variables**
 
 ### **Easy Updates (No Code Changes):**
-- ✅ **Change form link**: Update `HALF_DAY_FORM_URL` in Render dashboard
+- ✅ **Change HR person**: Update `HR_TAG` in Render dashboard
+- ✅ **Change leave approver**: Update `LEAVE_APPROVAL_TAG` 
 - ✅ **Change admin password**: Update `ADMIN_PASSWORD` 
 - ✅ **Change notification users**: Update `NOTIFY_USERS`
 - ✅ **Change time limits**: Update `MAX_INTERMEDIATE_HOURS`
