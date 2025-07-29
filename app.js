@@ -15,8 +15,8 @@ const config = {
         adminPassword: process.env.ADMIN_PASSWORD || 'admin123',
         transparencyChannel: process.env.TRANSPARENCY_CHANNEL || '#intermediate-logout',
         leaveApprovalChannel: process.env.LEAVE_APPROVAL_CHANNEL || '#leave-approval',
-        hrTag: process.env.HR_TAG || 'Anju Maria',
-        leaveApprovalTag: process.env.LEAVE_APPROVAL_TAG || 'Jesna S'
+        hrTag: process.env.HR_TAG || 'U1234567890',
+        leaveApprovalTag: process.env.LEAVE_APPROVAL_TAG || 'U0987654321'
     },
     notifications: {
         // Optional notification channel - only used for important admin notifications
@@ -1700,7 +1700,7 @@ app.view('intermediate_logout_modal', async ({ ack, body, client, view }) => {
                     type: 'section',
                     text: {
                         type: 'mrkdwn',
-                        text: `🔄 *Leave Request - Intermediate Logout*\n\n👤 *Employee:* ${userName}\n⏰ *Duration:* ${formattedDuration}\n🕐 *Expected Return:* ${returnTime}\n📝 *Reason:* ${reason}\n\n🔄 *Task Escalation:*\n${taskEscalation}`
+                        text: `🔄 *Leave Request - Intermediate Logout*\n\n👤 *Employee:* ${userName}\n⏰ *Duration:* ${formattedDuration}\n🕐 *Expected Return:* ${returnTime}\n📝 *Reason:* ${reason}\n\n🔄 *Task Escalation:*\n${taskEscalation}\n\n📋 <@${config.bot.leaveApprovalTag}> - Please review this leave request.`
                     }
                 },
                 {
@@ -1992,7 +1992,7 @@ app.view('planned_leave_modal', async ({ ack, body, client, view }) => {
                     type: 'section',
                     text: {
                         type: 'mrkdwn',
-                        text: `📅 *Leave Request - Planned Leave*\n\n👤 *Employee:* ${userName}\n📅 *Dates:* ${dateRange}\n📋 *Type:* ${Utils.formatLeaveType(leaveType)}\n📝 *Reason:* ${reason}\n⏱️ *Duration:* ${daysDiff} day${daysDiff > 1 ? 's' : ''}\n\n🔄 *Task Escalation:*\n${taskEscalation}`
+                        text: `📅 *Leave Request - Planned Leave*\n\n👤 *Employee:* ${userName}\n📅 *Dates:* ${dateRange}\n📋 *Type:* ${Utils.formatLeaveType(leaveType)}\n📝 *Reason:* ${reason}\n⏱️ *Duration:* ${daysDiff} day${daysDiff > 1 ? 's' : ''}\n\n🔄 *Task Escalation:*\n${taskEscalation}\n\n📋 <@${config.bot.leaveApprovalTag}> - Please review this leave request.`
                     }
                 },
                 {
@@ -2489,11 +2489,11 @@ app.action('approve_leave', async ({ ack, body, client, action }) => {
             ]
         });
         
-        // Send threaded reply for leave approval notification  
+        // Send threaded reply for HR notification  
         await client.chat.postMessage({
             channel: body.channel.id,
             thread_ts: body.message.ts,
-            text: `✅ *Approval Notification*\n\n${approverName} has approved this leave request at ${new Date().toLocaleString()}\n\n📋 <@${config.bot.leaveApprovalTag}> - Please take appropriate steps for this approval.`
+            text: `✅ *Approval Notification*\n\n${approverName} has approved this leave request at ${new Date().toLocaleString()}\n\n📋 <@${config.bot.hrTag}> - Please take appropriate steps for this approval.`
         });
         
     } catch (error) {
@@ -2566,11 +2566,11 @@ app.action('deny_leave', async ({ ack, body, client, action }) => {
             ]
         });
         
-        // Send threaded reply for leave approval notification
+        // Send threaded reply for HR notification
         await client.chat.postMessage({
             channel: body.channel.id,
             thread_ts: body.message.ts,
-            text: `❌ *Denial Notification*\n\n${denierName} has denied this leave request at ${new Date().toLocaleString()}\n\n📋 <@${config.bot.leaveApprovalTag}> - Please take appropriate steps for this denial.`
+            text: `❌ *Denial Notification*\n\n${denierName} has denied this leave request at ${new Date().toLocaleString()}\n\n📋 <@${config.bot.hrTag}> - Please take appropriate steps for this denial.`
         });
         
     } catch (error) {
@@ -2789,8 +2789,8 @@ cron.schedule('30 3 * * 1', async () => {
         console.log(`  • Transparency channel: ${config.bot.transparencyChannel}`);
         console.log(`  • Leave approval channel: ${config.bot.leaveApprovalChannel}`);
         console.log(`  • Leave approval access: Anyone in the ${config.bot.leaveApprovalChannel} channel`);
-        console.log(`  • Leave approval tag: @${config.bot.leaveApprovalTag}`);
-        console.log(`  • HR tag: @${config.bot.hrTag}`);
+        console.log(`  • Leave approval tag: ${config.bot.leaveApprovalTag} (User ID required)`);
+        console.log(`  • HR tag: ${config.bot.hrTag} (User ID required)`);
         console.log(`  • Admin notifications: ${config.notifications.notifyChannel ? '✅ ' + config.notifications.notifyChannel : '❌ Disabled'}`);
         console.log(`  • Admin password set: ${config.bot.adminPassword ? '✅' : '❌'}`);
         console.log(`  • Keepalive: ${RENDER_URL ? '✅ Enabled' : '❌ Disabled (add RENDER_URL env var)'}`);

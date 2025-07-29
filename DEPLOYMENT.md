@@ -17,9 +17,31 @@ EXTRA_WORK_DEADLINE_DAYS=7
 ADMIN_PASSWORD=your-secure-password
 TRANSPARENCY_CHANNEL=#intermediate-logout
 LEAVE_APPROVAL_CHANNEL=#leave-approval
-HR_TAG=Anju Maria
-LEAVE_APPROVAL_TAG=Jesna S
+HR_TAG=U1234567890
+LEAVE_APPROVAL_TAG=U0987654321
 ```
+
+### **🔍 How to Find Slack User IDs**
+**HR_TAG and LEAVE_APPROVAL_TAG require Slack User IDs, not display names!**
+
+**Method 1: Via Slack Web/Desktop**
+1. Go to the person's profile in Slack
+2. Click "More" → "Copy member ID"
+3. Use this ID (starts with "U") in your environment variables
+
+**Method 2: Via Slack Message**
+1. Right-click on any message from the person
+2. Select "Copy link" 
+3. The link contains their user ID: `...team/U1234567890/...`
+
+**Method 3: Via Slack Settings**
+1. Go to your Slack workspace settings
+2. Navigate to "Members" 
+3. Find the person and their ID will be visible
+
+**Example:**
+- ❌ Wrong: `HR_TAG=Anju Maria`
+- ✅ Correct: `HR_TAG=U1234567890`
 
 ### **Notifications (Optional)**
 ```
@@ -71,8 +93,8 @@ SLACK_APP_TOKEN=xapp-your-actual-token
 ADMIN_PASSWORD=MySecurePassword123
 TRANSPARENCY_CHANNEL=#company-leave
 LEAVE_APPROVAL_CHANNEL=#leave-approvals
-HR_TAG=Your HR Person
-LEAVE_APPROVAL_TAG=Your Manager
+HR_TAG=U1234567890
+LEAVE_APPROVAL_TAG=U0987654321
 NOTIFY_USERS=@hr-team,@ceo
 MAX_INTERMEDIATE_HOURS=3.0
 ```

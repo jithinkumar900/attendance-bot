@@ -5,7 +5,9 @@
     "extraWorkDeadlineDays": 7,
     "adminPassword": "admin123",
     "transparencyChannel": "#intermediate-logout",
-    "leaveApprovalChannel": "#leave-approval"
+    "leaveApprovalChannel": "#leave-approval",
+    "hrTag": "U1234567890",
+    "leaveApprovalTag": "U0987654321"
   },
   "notifications": {
     "notifyUsers": ["@hr-team", "@manager"],
