@@ -130,8 +130,8 @@ expressApp.listen(PORT, () => {
 const RENDER_URL = process.env.RENDER_URL; // We'll add this as env var
 
 if (RENDER_URL) {
-    // Main keepalive - every 5 minutes
-    cron.schedule('*/5 * * * *', async () => {
+    // Main keepalive - every 3 minutes (more aggressive)
+    cron.schedule('*/3 * * * *', async () => {
         try {
             await axios.get(`${RENDER_URL}/ping`, { timeout: 5000 });
             console.log('🔄 Keepalive ping successful');
