@@ -350,9 +350,8 @@ app.action('select_early_logout', async ({ ack, body, client }) => {
     
     try {
         const channelId = body.view.private_metadata;
-        
-        // Open early logout modal
-        await client.views.open({
+        // Push early logout modal onto the current modal stack
+        await client.views.push({
             trigger_id: body.trigger_id,
             view: {
                 type: 'modal',
@@ -446,9 +445,8 @@ app.action('select_late_login', async ({ ack, body, client }) => {
     
     try {
         const channelId = body.view.private_metadata;
-        
-        // Open late login modal
-        await client.views.open({
+        // Push late login modal onto the current modal stack
+        await client.views.push({
             trigger_id: body.trigger_id,
             view: {
                 type: 'modal',
