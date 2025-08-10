@@ -510,8 +510,8 @@ class Utils {
         const dateDisplay = isToday ? 'today' : `on ${this.formatDate(earlyDate)}`;
         
         let message = `🏃‍♂️ *${userName}* is leaving early ${dateDisplay}`;
-        message += `\n🕘 *Standard End:* ${this.formatTime12Hour(standardEndTime)}`;
-        message += `\n🚪 *Early Departure:* ${this.formatTime12Hour(earlyDepartureTime)}`;
+        message += `\n🕘 *Standard End:* ${standardEndTime}`;
+        message += `\n🚪 *Early Departure:* ${earlyDepartureTime}`;
         message += `\n⏰ *Time Shortfall:* ${this.formatDuration(shortfallMinutes)}`;
         message += `\n📝 *Reason:* ${reason}`;
         
