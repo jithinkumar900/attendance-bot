@@ -183,6 +183,39 @@ class Database {
                 }
             }
         );
+
+        // Migration: Add late login fields to leave_requests table
+        this.db.run(
+            `ALTER TABLE leave_requests ADD COLUMN standard_start_time TEXT`,
+            (err) => {
+                if (err) {
+                    // This is expected if the column already exists
+                    if (err.message.includes('duplicate column name')) {
+                        console.log('✅ Migration: standard_start_time column already exists');
+                    } else {
+                        console.error('Migration error:', err);
+                    }
+                } else {
+                    console.log('✅ Migration: Added standard_start_time column to leave_requests');
+                }
+            }
+        );
+
+        this.db.run(
+            `ALTER TABLE leave_requests ADD COLUMN actual_login_time TEXT`,
+            (err) => {
+                if (err) {
+                    // This is expected if the column already exists
+                    if (err.message.includes('duplicate column name')) {
+                        console.log('✅ Migration: actual_login_time column already exists');
+                    } else {
+                        console.error('Migration error:', err);
+                    }
+                } else {
+                    console.log('✅ Migration: Added actual_login_time column to leave_requests');
+                }
+            }
+        );
     }
 
     // User management
@@ -611,18 +644,20 @@ class Database {
                 endDate,
                 leaveDurationDays,
                 standardEndTime,
-                shortfallMinutes
+                shortfallMinutes,
+                standardStartTime,
+                actualLoginTime
             } = additionalData;
 
             this.db.run(
                 `INSERT INTO leave_requests 
                 (user_id, user_name, leave_type, reason, task_escalation, planned_duration, 
                 expected_return_time, departure_time, leave_date, start_date, end_date, leave_duration_days,
-                standard_end_time, shortfall_minutes) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                standard_end_time, shortfall_minutes, standard_start_time, actual_login_time) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [userId, userName, leaveType, reason, taskEscalation, plannedDuration, 
                 expectedReturnTime, departureTime, leaveDate, startDate, endDate, leaveDurationDays,
-                standardEndTime, shortfallMinutes],
+                standardEndTime, shortfallMinutes, standardStartTime, actualLoginTime],
                 function(err) {
                     if (err) reject(err);
                     else resolve(this.lastID);

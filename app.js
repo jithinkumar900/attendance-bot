@@ -265,21 +265,111 @@ cron.schedule('* * * * *', async () => {
 // SLASH COMMANDS
 // ================================
 
-// Handle /early_logout command
-app.command('/early_logout', async ({ command, ack, client }) => {
+// Handle /logout command (unified early logout and late login)
+app.command('/logout', async ({ command, ack, client }) => {
     await ack();
 
     try {
-        // Open early logout modal
+        // Open selection modal to choose between early logout or late login
         await client.views.open({
             trigger_id: command.trigger_id,
             view: {
                 type: 'modal',
-                callback_id: 'early_logout_modal',
-                title: { type: 'plain_text', text: 'Early Logout Request' },
-                submit: { type: 'plain_text', text: 'Submit Request' },
+                callback_id: 'logout_selection_modal',
+                title: { type: 'plain_text', text: 'Logout Request' },
+                submit: { type: 'plain_text', text: 'Continue' },
                 close: { type: 'plain_text', text: 'Cancel' },
                 private_metadata: command.channel_id,
+                blocks: [
+                    {
+                        type: 'section',
+                        text: {
+                            type: 'mrkdwn',
+                            text: '🔄 *Select Request Type*\n\nWhat would you like to request?'
+                        }
+                    },
+                    {
+                        type: 'input',
+                        block_id: 'request_type',
+                        element: {
+                            type: 'radio_buttons',
+                            action_id: 'type_selection',
+                            options: [
+                                {
+                                    text: { type: 'plain_text', text: '🏃‍♂️ Early Logout - Leave work before your standard end time' },
+                                    value: 'early_logout'
+                                },
+                                {
+                                    text: { type: 'plain_text', text: '🕐 Late Login - Started work after your standard start time' },
+                                    value: 'late_login'
+                                }
+                            ]
+                        },
+                        label: { type: 'plain_text', text: 'Request Type' }
+                    },
+                    {
+                        type: 'context',
+                        elements: [
+                            {
+                                type: 'mrkdwn',
+                                text: '💡 *Both requests require approval and may affect your work time balance*'
+                            }
+                        ]
+                    }
+                ]
+            }
+        });
+
+    } catch (error) {
+        console.error('Error in logout selection modal:', error);
+        
+        // Provide helpful error message
+        let errorMessage = "Sorry, there was an error opening the logout form.";
+        
+        if (error.message && error.message.includes('timeout')) {
+            errorMessage += " The service may be warming up. Please wait 10 seconds and try again.";
+        } else if (!connectionWarmed) {
+            errorMessage += " Connection is being established. Please try again in a moment.";
+        }
+        
+        await client.chat.postEphemeral({
+            channel: command.channel_id,
+            user: command.user_id,
+            text: `❌ ${errorMessage}`
+        });
+    }
+});
+
+// Handle logout selection modal submission
+app.view('logout_selection_modal', async ({ ack, body, client, view }) => {
+    await ack();
+    
+    try {
+        const values = view.state.values;
+        const requestType = values.request_type?.type_selection?.selected_option?.value;
+        
+        if (!requestType) {
+            return {
+                response_action: 'errors',
+                errors: {
+                    request_type: 'Please select a request type'
+                }
+            };
+        }
+        
+        const channelId = view.private_metadata;
+        
+        if (requestType === 'early_logout') {
+            // Open early logout modal
+            await client.views.open({
+                trigger_id: body.trigger_id,
+                view: {
+                    type: 'modal',
+                    callback_id: 'early_logout_modal',
+                    title: { type: 'plain_text', text: 'Early Logout Request' },
+                    submit: { type: 'plain_text', text: 'Submit Request' },
+                    close: { type: 'plain_text', text: 'Cancel' },
+                    private_metadata: channelId,
                 blocks: [
                     {
                         type: 'section',
@@ -354,23 +444,101 @@ app.command('/early_logout', async ({ command, ack, client }) => {
                 ]
             }
         });
+        } else if (requestType === 'late_login') {
+            // Open late login modal
+            await client.views.open({
+                trigger_id: body.trigger_id,
+                view: {
+                    type: 'modal',
+                    callback_id: 'late_login_modal',
+                    title: { type: 'plain_text', text: 'Late Login Request' },
+                    submit: { type: 'plain_text', text: 'Submit Request' },
+                    close: { type: 'plain_text', text: 'Cancel' },
+                    private_metadata: channelId,
+                    blocks: [
+                        {
+                            type: 'section',
+                            text: {
+                                type: 'mrkdwn',
+                                text: '🕐 *Request Late Login*\n\nPlease provide your work schedule and login details:'
+                            }
+                        },
+                        {
+                            type: 'input',
+                            block_id: 'late_login_date',
+                            element: {
+                                type: 'datepicker',
+                                action_id: 'late_date_select',
+                                placeholder: { type: 'plain_text', text: 'Select late login date' },
+                                initial_date: new Date().toISOString().split('T')[0]
+                            },
+                            label: { type: 'plain_text', text: '📅 Late Login Date' }
+                        },
+                        {
+                            type: 'input',
+                            block_id: 'standard_start_time',
+                            element: {
+                                type: 'timepicker',
+                                action_id: 'standard_start_time_select',
+                                placeholder: { type: 'plain_text', text: 'Your normal work start time' }
+                            },
+                            label: { type: 'plain_text', text: '🕘 Your Standard Work Start Time *' }
+                        },
+                        {
+                            type: 'input',
+                            block_id: 'actual_login_time',
+                            element: {
+                                type: 'timepicker',
+                                action_id: 'actual_login_time_select',
+                                placeholder: { type: 'plain_text', text: 'When you actually logged in' }
+                            },
+                            label: { type: 'plain_text', text: '🚪 Actual Login Time *' }
+                        },
+                        {
+                            type: 'input',
+                            block_id: 'late_reason',
+                            element: {
+                                type: 'plain_text_input',
+                                action_id: 'reason_input',
+                                placeholder: { type: 'plain_text', text: 'Traffic, medical appointment, personal emergency, etc.' },
+                                max_length: 200
+                            },
+                            label: { type: 'plain_text', text: '📝 Reason for Late Login *' }
+                        },
+                        {
+                            type: 'input',
+                            block_id: 'task_escalation',
+                            element: {
+                                type: 'plain_text_input',
+                                action_id: 'escalation_input',
+                                multiline: true,
+                                placeholder: { type: 'plain_text', text: 'Describe any tasks affected by late start and coverage arrangements (e.g., "Morning meeting covered by @john.doe, client calls rescheduled")' },
+                                max_length: 500
+                            },
+                            label: { type: 'plain_text', text: '🔄 Task Coverage/Impact *' }
+                        },
+                        {
+                            type: 'context',
+                            elements: [
+                                {
+                                    type: 'mrkdwn',
+                                    text: '⚠️ *All fields are required* | 📊 *Time shortfall will be added to your pending work balance*'
+                                }
+                            ]
+                        }
+                    ]
+                }
+            });
+        }
 
     } catch (error) {
-        console.error('Error in early logout modal:', error);
+        console.error('Error in logout selection modal:', error);
         
-        // Provide helpful error message
-        let errorMessage = "Sorry, there was an error opening the early logout form.";
-        
-        if (error.message && error.message.includes('timeout')) {
-            errorMessage += " The service may be warming up. Please wait 10 seconds and try again.";
-        } else if (!connectionWarmed) {
-            errorMessage += " Connection is being established. Please try again in a moment.";
-        }
-        
+        // Send error message to user
         await client.chat.postEphemeral({
-            channel: command.channel_id,
-            user: command.user_id,
-            text: `❌ ${errorMessage}`
+            channel: body.view.private_metadata,
+            user: body.user.id,
+            text: "❌ Sorry, there was an error processing your request. Please try again."
         });
     }
 });
@@ -2184,6 +2352,166 @@ app.view('early_logout_modal', async ({ ack, body, client, view }) => {
     }
 });
 
+// Handle late login modal submission
+app.view('late_login_modal', async ({ ack, body, client, view }) => {
+    await ack();
+    
+    try {
+        const user_id = body.user.id;
+        
+        // Extract values from the modal
+        const values = view.state.values;
+        
+        // Get date and times
+        const lateDate = values.late_login_date?.late_date_select?.selected_date;
+        const standardStartTime = values.standard_start_time?.standard_start_time_select?.selected_time;
+        const actualLoginTime = values.actual_login_time?.actual_login_time_select?.selected_time;
+        
+        // Get reason and task escalation
+        const reason = values.late_reason?.reason_input?.value?.trim();
+        const taskEscalation = values.task_escalation?.escalation_input?.value?.trim();
+        
+        // Validate all required fields
+        if (!lateDate || !standardStartTime || !actualLoginTime || !reason || !taskEscalation) {
+            return {
+                response_action: 'errors',
+                errors: {
+                    late_login_date: !lateDate ? 'Please select a late login date' : '',
+                    standard_start_time: !standardStartTime ? 'Please specify your standard work start time' : '',
+                    actual_login_time: !actualLoginTime ? 'Please specify when you actually logged in' : '',
+                    late_reason: !reason ? 'Please provide a reason for late login' : '',
+                    task_escalation: !taskEscalation ? 'Task coverage/impact description is required' : ''
+                }
+            };
+        }
+        
+        // Validate that the late date is not in the future
+        const today = new Date();
+        today.setHours(23, 59, 59, 999); // End of today
+        const selectedDate = new Date(lateDate);
+        
+        if (selectedDate > today) {
+            return {
+                response_action: 'errors',
+                errors: {
+                    late_login_date: 'Late login date cannot be in the future'
+                }
+            };
+        }
+        
+        // Validate that actual login is after standard start time
+        const shortfallMinutes = Utils.calculateLateLoginShortfall(standardStartTime, actualLoginTime);
+        
+        if (shortfallMinutes <= 0) {
+            return {
+                response_action: 'errors',
+                errors: {
+                    actual_login_time: 'Actual login time must be after your standard start time'
+                }
+            };
+        }
+        
+        // Get user info
+        const userInfo = await client.users.info({ user: user_id });
+        const userName = userInfo.user.real_name || userInfo.user.name;
+        
+        // Create user in database if not exists
+        await db.createUser(user_id, userName, userInfo.user.profile?.email);
+        
+        // Format times for display
+        const formattedStandardStartTime = Utils.formatTime12Hour(standardStartTime);
+        const formattedActualLoginTime = Utils.formatTime12Hour(actualLoginTime);
+        const formattedShortfall = Utils.formatDuration(shortfallMinutes);
+        const formattedDate = Utils.formatDate(lateDate);
+        
+        // Create leave request for approval
+        const requestId = await db.createLeaveRequest(
+            user_id,
+            userName,
+            'late',
+            reason,
+            taskEscalation,
+            {
+                leaveDate: lateDate,
+                standardStartTime: formattedStandardStartTime,
+                actualLoginTime: formattedActualLoginTime,
+                shortfallMinutes: shortfallMinutes
+            }
+        );
+        
+        // Send approval request to leave-approval channel with interactive buttons
+        const isToday = lateDate === new Date().toISOString().split('T')[0];
+        const approvalMessage = {
+            text: `🕐 *Leave Request - Late Login*`,
+            blocks: [
+                {
+                    type: 'section',
+                    text: {
+                        type: 'mrkdwn',
+                        text: `🕐 *Leave Request - Late Login*\n\n👤 *Employee:* ${userName}\n${!isToday ? `📅 *Date:* ${formattedDate}\n` : ''}🕘 *Standard Start:* ${formattedStandardStartTime}\n🚪 *Actual Login:* ${formattedActualLoginTime}\n⏰ *Time Shortfall:* ${formattedShortfall}\n📝 *Reason:* ${reason}\n\n🔄 *Task Coverage/Impact:*\n${taskEscalation}\n\n📋 <@${config.bot.leaveApprovalTag}> - Please review this late login request.`
+                    }
+                },
+                {
+                    type: 'actions',
+                    elements: [
+                        {
+                            type: 'button',
+                            text: { type: 'plain_text', text: '✅ Approve' },
+                            style: 'primary',
+                            action_id: 'approve_leave',
+                            value: requestId.toString()
+                        },
+                        {
+                            type: 'button',
+                            text: { type: 'plain_text', text: '❌ Deny' },
+                            style: 'danger',
+                            action_id: 'deny_leave',
+                            value: requestId.toString()
+                        }
+                    ]
+                }
+            ]
+        };
+        
+        await client.chat.postMessage({
+            channel: config.bot.leaveApprovalChannel,
+            ...approvalMessage
+        });
+        
+        // Send success message to user (private)
+        let successMessage = `✅ *Late login request submitted successfully!*\n\n${!isToday ? `📅 Date: ${formattedDate}\n` : ''}🕘 Standard Start: ${formattedStandardStartTime}\n🚪 Actual Login: ${formattedActualLoginTime}\n⏰ Time Shortfall: ${formattedShortfall}\n📝 Reason: ${reason}`;
+        
+        if (taskEscalation) {
+            successMessage += `\n🔄 Task Coverage: ${taskEscalation}`;
+        }
+        
+        successMessage += `\n\n📋 Your request has been sent to ${config.bot.leaveApprovalChannel} for manager approval.\n📊 Upon approval, ${formattedShortfall} will be added to your pending work balance.`;
+        
+        // Send confirmation in the channel where user requested
+        const channelId = body.view.private_metadata;
+        await client.chat.postMessage({
+            channel: channelId,
+            text: `📋 *Late Login Request Submitted*\n\n${userName} has submitted a late login request and is awaiting approval.`
+        });
+        
+        await client.chat.postEphemeral({
+            channel: channelId,
+            user: user_id,
+            text: successMessage
+        });
+        
+    } catch (error) {
+        console.error('Error processing late login modal:', error);
+        
+        // Send error message to user
+        await client.chat.postEphemeral({
+            channel: config.bot.transparencyChannel,
+            user: body.user.id,
+            text: "❌ Sorry, there was an error submitting your late login request. Please try again."
+        });
+    }
+});
+
 // Handle extend leave modal submission
 app.view('extend_leave_modal', async ({ ack, body, client, view }) => {
     await ack();
@@ -2942,6 +3270,41 @@ app.action('approve_leave', async ({ ack, body, client, action }) => {
                 channel: leaveRequest.user_id,
                 text: `✅ *Early Logout Approved!*\n\nYour early logout request has been approved by ${approverName}.\n📅 Date: ${dateDisplay}\n🚪 Early Departure: ${leaveRequest.departure_time}\n🕘 Standard End: ${leaveRequest.standard_end_time}\n⏰ Time Shortfall: ${formattedShortfall}\n\n📊 ${formattedShortfall} has been added to your pending work balance.`
             });
+        } else if (leaveRequest.leave_type === 'late') {
+            // For late login, add shortfall to pending work and post to transparency channel
+            const shortfallMinutes = leaveRequest.shortfall_minutes || 0;
+            const formattedShortfall = Utils.formatDuration(shortfallMinutes);
+            
+            // Add shortfall to user's pending extra work balance
+            if (shortfallMinutes > 0) {
+                const today = Utils.getCurrentDate();
+                await db.addToPendingWork(leaveRequest.user_id, today, shortfallMinutes);
+            }
+            
+            // Post late login approval to transparency channel
+            const lateLoginMessage = Utils.formatLateLoginMessage(
+                leaveRequest.user_name,
+                leaveRequest.leave_date || Utils.getCurrentDate(),
+                leaveRequest.standard_start_time,
+                leaveRequest.actual_login_time,
+                shortfallMinutes,
+                leaveRequest.reason,
+                leaveRequest.task_escalation
+            );
+            
+            await client.chat.postMessage({
+                channel: config.bot.transparencyChannel,
+                text: lateLoginMessage
+            });
+            
+            // Notify user
+            const isToday = leaveRequest.leave_date === Utils.getCurrentDate();
+            const dateDisplay = isToday ? 'Today' : Utils.formatDate(leaveRequest.leave_date);
+            
+            await client.chat.postMessage({
+                channel: leaveRequest.user_id,
+                text: `✅ *Late Login Approved!*\n\nYour late login request has been approved by ${approverName}.\n📅 Date: ${dateDisplay}\n🚪 Actual Login: ${leaveRequest.actual_login_time}\n🕘 Standard Start: ${leaveRequest.standard_start_time}\n⏰ Time Shortfall: ${formattedShortfall}\n\n📊 ${formattedShortfall} has been added to your pending work balance.`
+            });
         } else {
             // For planned leave, post to transparency channel and notify user
             const dateRange = leaveRequest.start_date === leaveRequest.end_date ? 
@@ -2972,7 +3335,8 @@ app.action('approve_leave', async ({ ack, body, client, action }) => {
         
         // Update the original message to show approval
         const leaveTypeDisplay = leaveRequest.leave_type === 'intermediate' ? 'Intermediate Logout' : 
-                                leaveRequest.leave_type === 'early' ? 'Early Logout' : 'Planned Leave';
+                                leaveRequest.leave_type === 'early' ? 'Early Logout' : 
+                                leaveRequest.leave_type === 'late' ? 'Late Login' : 'Planned Leave';
         
         await client.chat.update({
             channel: body.channel.id,
@@ -3046,7 +3410,8 @@ app.action('deny_leave', async ({ ack, body, client, action }) => {
         
         // Notify user
         const leaveTypeText = leaveRequest.leave_type === 'intermediate' ? 'intermediate logout' :
-                             leaveRequest.leave_type === 'early' ? 'early logout' : 'planned leave';
+                             leaveRequest.leave_type === 'early' ? 'early logout' : 
+                             leaveRequest.leave_type === 'late' ? 'late login' : 'planned leave';
         
         await client.chat.postMessage({
             channel: leaveRequest.user_id,
@@ -3055,7 +3420,8 @@ app.action('deny_leave', async ({ ack, body, client, action }) => {
         
         // Update the original message to show denial
         const leaveTypeDisplay = leaveRequest.leave_type === 'intermediate' ? 'Intermediate Logout' :
-                                leaveRequest.leave_type === 'early' ? 'Early Logout' : 'Planned Leave';
+                                leaveRequest.leave_type === 'early' ? 'Early Logout' : 
+                                leaveRequest.leave_type === 'late' ? 'Late Login' : 'Planned Leave';
         
         await client.chat.update({
             channel: body.channel.id,
@@ -3357,7 +3723,7 @@ async function startApp(retryCount = 0) {
         console.log(`  • Admin password set: ${config.bot.adminPassword ? '✅' : '❌'}`);
         console.log(`  • Keepalive: ${RENDER_URL ? '✅ Enabled' : '❌ Disabled (add RENDER_URL env var)'}`);
         console.log('🚀 Available commands:');
-        console.log('  /early_logout - Request early logout (requires approval)');
+        console.log('  /logout - Request early logout or late login (requires approval)');
         console.log('  /intermediate_logout <duration> <reason> - Start intermediate logout (requires approval)');
         console.log('  /planned - Request planned leave (requires approval)');
         console.log('  /return - End current leave');

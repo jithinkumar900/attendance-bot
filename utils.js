@@ -141,6 +141,23 @@ class Utils {
         return Math.max(0, shortfall); // Return 0 if not actually leaving early
     }
 
+    // Calculate late login shortfall minutes between standard start and actual login time
+    static calculateLateLoginShortfall(standardStartTime, actualLoginTime) {
+        // Parse both times to get minutes from midnight
+        const parseTimeToMinutes = (timeString) => {
+            const time24 = this.parseTimeString(timeString);
+            const [hours, minutes] = time24.split(':').map(Number);
+            return hours * 60 + minutes;
+        };
+
+        const standardMinutes = parseTimeToMinutes(standardStartTime);
+        const actualMinutes = parseTimeToMinutes(actualLoginTime);
+
+        // Calculate shortfall (should be positive if logging in late)
+        const shortfall = actualMinutes - standardMinutes;
+        return Math.max(0, shortfall); // Return 0 if not actually late
+    }
+
     // Format date for display
     static formatDate(date) {
         return moment(date).format('MMM DD, YYYY');
@@ -500,6 +517,24 @@ class Utils {
         
         if (taskEscalation) {
             message += `\n\n🔄 *Task Escalation:* ${taskEscalation}`;
+        }
+        
+        return message;
+    }
+
+    // Create late login transparency message
+    static formatLateLoginMessage(userName, lateDate, standardStartTime, actualLoginTime, shortfallMinutes, reason, taskEscalation = '') {
+        const isToday = lateDate === new Date().toISOString().split('T')[0];
+        const dateDisplay = isToday ? 'today' : `on ${this.formatDate(lateDate)}`;
+        
+        let message = `🕐 *${userName}* had a late login ${dateDisplay}`;
+        message += `\n🕘 *Standard Start:* ${this.formatTime12Hour(standardStartTime)}`;
+        message += `\n🚪 *Actual Login:* ${this.formatTime12Hour(actualLoginTime)}`;
+        message += `\n⏰ *Time Shortfall:* ${this.formatDuration(shortfallMinutes)}`;
+        message += `\n📝 *Reason:* ${reason}`;
+        
+        if (taskEscalation) {
+            message += `\n\n🔄 *Task Coverage/Impact:* ${taskEscalation}`;
         }
         
         return message;
