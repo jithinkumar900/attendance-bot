@@ -276,7 +276,7 @@ app.command('/logout', async ({ command, ack, client }) => {
             view: {
                 type: 'modal',
                 callback_id: 'logout_selection_modal',
-                title: { type: 'plain_text', text: 'Logout Request' },
+                title: { type: 'plain_text', text: 'Early Logout Or Late Login Request' },
                 submit: { type: 'plain_text', text: 'Continue' },
                 close: { type: 'plain_text', text: 'Cancel' },
                 private_metadata: command.channel_id,
@@ -289,23 +289,28 @@ app.command('/logout', async ({ command, ack, client }) => {
                         }
                     },
                     {
-                        type: 'input',
-                        block_id: 'request_type',
-                        element: {
-                            type: 'radio_buttons',
-                            action_id: 'type_selection',
-                            options: [
-                                {
-                                    text: { type: 'plain_text', text: '🏃‍♂️ Early Logout - Leave work before your standard end time' },
-                                    value: 'early_logout'
-                                },
-                                {
-                                    text: { type: 'plain_text', text: '🕐 Late Login - Started work after your standard start time' },
-                                    value: 'late_login'
-                                }
-                            ]
-                        },
-                        label: { type: 'plain_text', text: 'Request Type' }
+                        type: 'actions',
+                        elements: [
+                            {
+                                type: 'button',
+                                text: { type: 'plain_text', text: '🏃‍♂️ Early Logout' },
+                                action_id: 'select_early_logout',
+                                style: 'primary'
+                            },
+                            {
+                                type: 'button',
+                                text: { type: 'plain_text', text: '🕐 Late Login' },
+                                action_id: 'select_late_login',
+                                style: 'primary'
+                            }
+                        ]
+                    },
+                    {
+                        type: 'section',
+                        text: {
+                            type: 'mrkdwn',
+                            text: '**🏃‍♂️ Early Logout:** Leave work before your standard end time\n**🕐 Late Login:** Start work after your standard start time'
+                        }
                     },
                     {
                         type: 'context',
@@ -340,36 +345,23 @@ app.command('/logout', async ({ command, ack, client }) => {
     }
 });
 
-// Handle logout selection modal submission
-app.view('logout_selection_modal', async ({ ack, body, client, view }) => {
+// Handle Early Logout button selection
+app.action('select_early_logout', async ({ ack, body, client }) => {
     await ack();
     
     try {
-        const values = view.state.values;
-        const requestType = values.request_type?.type_selection?.selected_option?.value;
+        const channelId = body.view.private_metadata;
         
-        if (!requestType) {
-            return {
-                response_action: 'errors',
-                errors: {
-                    request_type: 'Please select a request type'
-                }
-            };
-        }
-        
-        const channelId = view.private_metadata;
-        
-        if (requestType === 'early_logout') {
-            // Open early logout modal
-            await client.views.open({
-                trigger_id: body.trigger_id,
-                view: {
-                    type: 'modal',
-                    callback_id: 'early_logout_modal',
-                    title: { type: 'plain_text', text: 'Early Logout Request' },
-                    submit: { type: 'plain_text', text: 'Submit Request' },
-                    close: { type: 'plain_text', text: 'Cancel' },
-                    private_metadata: channelId,
+        // Open early logout modal
+        await client.views.open({
+            trigger_id: body.trigger_id,
+            view: {
+                type: 'modal',
+                callback_id: 'early_logout_modal',
+                title: { type: 'plain_text', text: 'Early Logout Request' },
+                submit: { type: 'plain_text', text: 'Submit Request' },
+                close: { type: 'plain_text', text: 'Cancel' },
+                private_metadata: channelId,
                 blocks: [
                     {
                         type: 'section',
@@ -444,17 +436,28 @@ app.view('logout_selection_modal', async ({ ack, body, client, view }) => {
                 ]
             }
         });
-        } else if (requestType === 'late_login') {
-            // Open late login modal
-            await client.views.open({
-                trigger_id: body.trigger_id,
-                view: {
-                    type: 'modal',
-                    callback_id: 'late_login_modal',
-                    title: { type: 'plain_text', text: 'Late Login Request' },
-                    submit: { type: 'plain_text', text: 'Submit Request' },
-                    close: { type: 'plain_text', text: 'Cancel' },
-                    private_metadata: channelId,
+    } catch (error) {
+        console.error('Error opening early logout modal:', error);
+    }
+});
+
+// Handle Late Login button selection
+app.action('select_late_login', async ({ ack, body, client }) => {
+    await ack();
+    
+    try {
+        const channelId = body.view.private_metadata;
+        
+        // Open late login modal
+        await client.views.open({
+            trigger_id: body.trigger_id,
+            view: {
+                type: 'modal',
+                callback_id: 'late_login_modal',
+                title: { type: 'plain_text', text: 'Late Login Request' },
+                submit: { type: 'plain_text', text: 'Submit Request' },
+                close: { type: 'plain_text', text: 'Cancel' },
+                private_metadata: channelId,
                     blocks: [
                         {
                             type: 'section',
@@ -529,17 +532,8 @@ app.view('logout_selection_modal', async ({ ack, body, client, view }) => {
                     ]
                 }
             });
-        }
-
     } catch (error) {
-        console.error('Error in logout selection modal:', error);
-        
-        // Send error message to user
-        await client.chat.postEphemeral({
-            channel: body.view.private_metadata,
-            user: body.user.id,
-            text: "❌ Sorry, there was an error processing your request. Please try again."
-        });
+        console.error('Error opening late login modal:', error);
     }
 });
 
