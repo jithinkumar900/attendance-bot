@@ -276,7 +276,7 @@ app.command('/logout', async ({ command, ack, client }) => {
             view: {
                 type: 'modal',
                 callback_id: 'logout_selection_modal',
-                title: { type: 'plain_text', text: 'Early Logout Or Late Login Request' },
+                title: { type: 'plain_text', text: 'Time Request' },
                 submit: { type: 'plain_text', text: 'Continue' },
                 close: { type: 'plain_text', text: 'Cancel' },
                 private_metadata: command.channel_id,
@@ -285,7 +285,7 @@ app.command('/logout', async ({ command, ack, client }) => {
                         type: 'section',
                         text: {
                             type: 'mrkdwn',
-                            text: '🔄 *Select Request Type*\n\nWhat would you like to request?'
+                            text: '🔄 *Early Logout Or Late Login Request*\n\nWhat would you like to request?'
                         }
                     },
                     {
