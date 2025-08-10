@@ -266,7 +266,7 @@ cron.schedule('* * * * *', async () => {
 // ================================
 
 // Handle /logout command (unified early logout and late login)
-app.command('/logout', async ({ command, ack, client }) => {
+app.command('/late_login_early_logout', async ({ command, ack, client }) => {
     await ack();
 
     try {
@@ -2711,19 +2711,7 @@ app.view('late_login_modal', async ({ ack, body, client, view }) => {
             };
         }
         
-        // Validate that the late date is not in the future
-        const today = new Date();
-        today.setHours(23, 59, 59, 999); // End of today
-        const selectedDate = new Date(lateDate);
-        
-        if (selectedDate > today) {
-            return {
-                response_action: 'errors',
-                errors: {
-                    late_login_date: 'Late login date cannot be in the future'
-                }
-            };
-        }
+        // Allow any date (past or future) for late login reporting/scheduling
         
         // Validate that actual login is after standard start time
         const shortfallMinutes = Utils.calculateLateLoginShortfall(standardStartTime, actualLoginTime);
@@ -4049,7 +4037,7 @@ async function startApp(retryCount = 0) {
         console.log(`  • Admin password set: ${config.bot.adminPassword ? '✅' : '❌'}`);
         console.log(`  • Keepalive: ${RENDER_URL ? '✅ Enabled' : '❌ Disabled (add RENDER_URL env var)'}`);
         console.log('🚀 Available commands:');
-        console.log('  /logout - Request early logout or late login (requires approval)');
+        console.log('  /late_login_early_logout - Request early logout or late login (requires approval)');
         console.log('  /intermediate_logout <duration> <reason> - Start intermediate logout (requires approval)');
         console.log('  /planned - Request planned leave (requires approval)');
         console.log('  /return - End current leave');
