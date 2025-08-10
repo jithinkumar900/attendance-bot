@@ -94,6 +94,36 @@ class Utils {
         return moment(timestamp).tz('Asia/Kolkata').format('h:mm A');
     }
 
+    // Format time string (HH:MM) to 12-hour format
+    static formatTime12Hour(timeString) {
+        const [hours, minutes] = timeString.split(':');
+        const hour24 = parseInt(hours);
+        const hour12 = hour24 === 0 ? 12 : hour24 > 12 ? hour24 - 12 : hour24;
+        const ampm = hour24 < 12 ? 'AM' : 'PM';
+        return `${hour12}:${minutes} ${ampm}`;
+    }
+
+    // Parse time string from 12-hour format (e.g., "2:30 PM") back to 24-hour format (e.g., "14:30")
+    static parseTimeString(timeString) {
+        // Handle both "2:30 PM" and "14:30" formats
+        if (timeString.includes('AM') || timeString.includes('PM')) {
+            const [time, period] = timeString.split(' ');
+            const [hours, minutes] = time.split(':');
+            let hour24 = parseInt(hours);
+            
+            if (period === 'PM' && hour24 !== 12) {
+                hour24 += 12;
+            } else if (period === 'AM' && hour24 === 12) {
+                hour24 = 0;
+            }
+            
+            return `${hour24.toString().padStart(2, '0')}:${minutes}`;
+        }
+        
+        // Already in 24-hour format
+        return timeString;
+    }
+
     // Format date for display
     static formatDate(date) {
         return moment(date).format('MMM DD, YYYY');
@@ -404,8 +434,16 @@ class Utils {
     }
 
     // Create leave transparency message
-    static formatLeaveTransparencyMessage(userName, duration, reason, returnTime, taskEscalation = '') {
-        let message = `🏃‍♂️ *${userName}* is on intermediate logout for *${duration}* (${reason}) - back by *${returnTime}*`;
+    static formatLeaveTransparencyMessage(userName, duration, reason, returnTime, taskEscalation = '', departureTime = null) {
+        let message;
+        
+        if (departureTime) {
+            // New format with departure and return times
+            message = `🏃‍♂️ *${userName}* is on intermediate logout (${reason})\n🚪 *Departed:* ${departureTime}\n🔙 *Expected return:* ${returnTime}\n⏰ *Duration:* ${duration}`;
+        } else {
+            // Legacy format for backwards compatibility
+            message = `🏃‍♂️ *${userName}* is on intermediate logout for *${duration}* (${reason}) - back by *${returnTime}*`;
+        }
         
         if (taskEscalation) {
             message += `\n\n🔄 *Task Escalation:* ${taskEscalation}`;

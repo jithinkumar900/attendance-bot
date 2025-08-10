@@ -116,6 +116,23 @@ class Database {
                 }
             }
         );
+
+        // Migration: Add departure_time column to leave_requests table
+        this.db.run(
+            `ALTER TABLE leave_requests ADD COLUMN departure_time TEXT`,
+            (err) => {
+                if (err) {
+                    // This is expected if the column already exists
+                    if (err.message.includes('duplicate column name')) {
+                        console.log('✅ Migration: departure_time column already exists');
+                    } else {
+                        console.error('Migration error:', err);
+                    }
+                } else {
+                    console.log('✅ Migration: Added departure_time column to leave_requests');
+                }
+            }
+        );
     }
 
     // User management
@@ -493,6 +510,7 @@ class Database {
             const {
                 plannedDuration,
                 expectedReturnTime,
+                departureTime,
                 startDate,
                 endDate,
                 leaveDurationDays
@@ -501,10 +519,10 @@ class Database {
             this.db.run(
                 `INSERT INTO leave_requests 
                 (user_id, user_name, leave_type, reason, task_escalation, planned_duration, 
-                expected_return_time, start_date, end_date, leave_duration_days) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                expected_return_time, departure_time, start_date, end_date, leave_duration_days) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [userId, userName, leaveType, reason, taskEscalation, plannedDuration, 
-                expectedReturnTime, startDate, endDate, leaveDurationDays],
+                expectedReturnTime, departureTime, startDate, endDate, leaveDurationDays],
                 function(err) {
                     if (err) reject(err);
                     else resolve(this.lastID);

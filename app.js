@@ -378,47 +378,28 @@ app.command('/intermediate_logout', async ({ command, ack, client }) => {
                         type: 'section',
                         text: {
                             type: 'mrkdwn',
-                            text: '⏰ *How long will you be away?*\n\nSelect your expected leave duration:'
+                            text: '🕐 *When will you leave and return?*\n\nSpecify your departure and expected return times:'
                         }
                     },
                     {
                         type: 'input',
-                        block_id: 'leave_hours',
+                        block_id: 'departure_time',
                         element: {
-                            type: 'static_select',
-                            placeholder: { type: 'plain_text', text: 'Select hours' },
-                            action_id: 'hours_select',
-                            options: [
-                                { text: { type: 'plain_text', text: '0 hours' }, value: '0' },
-                                { text: { type: 'plain_text', text: '1 hour' }, value: '1' },
-                                { text: { type: 'plain_text', text: '2 hours' }, value: '2' },
-                                { text: { type: 'plain_text', text: '3 hours' }, value: '3' },
-                                { text: { type: 'plain_text', text: '4 hours' }, value: '4' },
-                                { text: { type: 'plain_text', text: '5 hours' }, value: '5' },
-                                { text: { type: 'plain_text', text: '6 hours' }, value: '6' },
-                                { text: { type: 'plain_text', text: '7 hours' }, value: '7' },
-                                { text: { type: 'plain_text', text: '8 hours' }, value: '8' }
-                            ],
-                            initial_option: { text: { type: 'plain_text', text: '0 hours' }, value: '0' }
+                            type: 'timepicker',
+                            action_id: 'departure_time_select',
+                            placeholder: { type: 'plain_text', text: 'Select departure time' }
                         },
-                        label: { type: 'plain_text', text: '🕐 Hours' }
+                        label: { type: 'plain_text', text: '🚪 Departure Time' }
                     },
                     {
                         type: 'input',
-                        block_id: 'leave_minutes',
+                        block_id: 'return_time',
                         element: {
-                            type: 'static_select',
-                            placeholder: { type: 'plain_text', text: 'Select minutes' },
-                            action_id: 'minutes_select',
-                            options: [
-                                { text: { type: 'plain_text', text: '0 minutes' }, value: '0' },
-                                { text: { type: 'plain_text', text: '15 minutes' }, value: '15' },
-                                { text: { type: 'plain_text', text: '30 minutes' }, value: '30' },
-                                { text: { type: 'plain_text', text: '45 minutes' }, value: '45' }
-                            ],
-                            initial_option: { text: { type: 'plain_text', text: '15 minutes' }, value: '15' }
+                            type: 'timepicker',
+                            action_id: 'return_time_select',
+                            placeholder: { type: 'plain_text', text: 'Select expected return time' }
                         },
-                        label: { type: 'plain_text', text: '⏰ Minutes' }
+                        label: { type: 'plain_text', text: '🔙 Expected Return Time' }
                     },
                     {
                         type: 'input',
@@ -1721,9 +1702,9 @@ app.view('intermediate_logout_modal', async ({ ack, body, client, view }) => {
         // Extract values from the modal
         const values = view.state.values;
         
-        // Get hours and minutes from the selects
-        const hours = parseInt(values.leave_hours?.hours_select?.selected_option?.value || '0');
-        const minutes = parseInt(values.leave_minutes?.minutes_select?.selected_option?.value || '0');
+        // Get departure and return times
+        const departureTime = values.departure_time?.departure_time_select?.selected_time;
+        const returnTime = values.return_time?.return_time_select?.selected_time;
         
         // Get reason (optional)
         const reason = values.leave_reason?.reason_input?.value?.trim() || 'Intermediate logout';
@@ -1731,17 +1712,50 @@ app.view('intermediate_logout_modal', async ({ ack, body, client, view }) => {
         // Get task escalation (required)
         const taskEscalation = values.task_escalation?.escalation_input?.value?.trim() || '';
         
-        // Calculate total duration in minutes
-        const durationMinutes = (hours * 60) + minutes;
-        
-        // Validate duration
-        if (durationMinutes === 0) {
-            // Show error - can't have 0 duration
+        // Validate times
+        if (!departureTime || !returnTime) {
             return {
                 response_action: 'errors',
                 errors: {
-                    leave_hours: 'Please select at least 15 minutes',
-                    leave_minutes: 'Please select at least 15 minutes'
+                    departure_time: !departureTime ? 'Please select a departure time' : '',
+                    return_time: !returnTime ? 'Please select a return time' : ''
+                }
+            };
+        }
+        
+        // Parse times and calculate duration
+        const today = new Date();
+        const departureDateTime = new Date(today.toDateString() + ' ' + departureTime);
+        const returnDateTime = new Date(today.toDateString() + ' ' + returnTime);
+        
+        // Check if return time is after departure time
+        if (returnDateTime <= departureDateTime) {
+            return {
+                response_action: 'errors',
+                errors: {
+                    return_time: 'Return time must be after departure time'
+                }
+            };
+        }
+        
+        // Calculate duration in minutes
+        const durationMinutes = Math.round((returnDateTime - departureDateTime) / (1000 * 60));
+        
+        // Validate duration (minimum 15 minutes, maximum 8 hours)
+        if (durationMinutes < 15) {
+            return {
+                response_action: 'errors',
+                errors: {
+                    return_time: 'Duration must be at least 15 minutes'
+                }
+            };
+        }
+        
+        if (durationMinutes > 480) { // 8 hours
+            return {
+                response_action: 'errors',
+                errors: {
+                    return_time: 'Duration cannot exceed 8 hours'
                 }
             };
         }
@@ -1756,15 +1770,6 @@ app.view('intermediate_logout_modal', async ({ ack, body, client, view }) => {
             };
         }
         
-        if (durationMinutes > 480) { // 8 hours max
-            return {
-                response_action: 'errors',
-                errors: {
-                    leave_hours: 'Maximum 8 hours allowed'
-                }
-            };
-        }
-        
         // Get user info
         const userInfo = await client.users.info({ user: user_id });
         const userName = userInfo.user.real_name || userInfo.user.name;
@@ -1772,8 +1777,9 @@ app.view('intermediate_logout_modal', async ({ ack, body, client, view }) => {
         // Create user in database if not exists
         await db.createUser(user_id, userName, userInfo.user.profile?.email);
         
-        // Calculate return time
-        const returnTime = Utils.calculateReturnTime(durationMinutes);
+        // Format times for display
+        const formattedDepartureTime = Utils.formatTime12Hour(departureTime);
+        const formattedReturnTime = Utils.formatTime12Hour(returnTime);
         const formattedDuration = Utils.formatDuration(durationMinutes);
         
         // Create leave request for approval
@@ -1785,7 +1791,8 @@ app.view('intermediate_logout_modal', async ({ ack, body, client, view }) => {
             taskEscalation, 
             {
                 plannedDuration: durationMinutes,
-                expectedReturnTime: returnTime
+                expectedReturnTime: formattedReturnTime,
+                departureTime: formattedDepartureTime
             }
         );
         
@@ -1797,7 +1804,7 @@ app.view('intermediate_logout_modal', async ({ ack, body, client, view }) => {
                     type: 'section',
                     text: {
                         type: 'mrkdwn',
-                        text: `🔄 *Leave Request - Intermediate Logout*\n\n👤 *Employee:* ${userName}\n⏰ *Duration:* ${formattedDuration}\n🕐 *Expected Return:* ${returnTime}\n📝 *Reason:* ${reason}\n\n🔄 *Task Escalation:*\n${taskEscalation}\n\n📋 <@${config.bot.leaveApprovalTag}> - Please review this leave request.`
+                        text: `🔄 *Leave Request - Intermediate Logout*\n\n👤 *Employee:* ${userName}\n🚪 *Departure:* ${formattedDepartureTime}\n🔙 *Expected Return:* ${formattedReturnTime}\n⏰ *Duration:* ${formattedDuration}\n📝 *Reason:* ${reason}\n\n🔄 *Task Escalation:*\n${taskEscalation}\n\n📋 <@${config.bot.leaveApprovalTag}> - Please review this leave request.`
                     }
                 },
                 {
@@ -1828,7 +1835,7 @@ app.view('intermediate_logout_modal', async ({ ack, body, client, view }) => {
         });
         
         // Send success message to user (private)
-        let successMessage = `✅ *Leave request submitted successfully!*\n\n⏰ Duration: ${formattedDuration}\n🕐 Expected return: ${returnTime}\n📝 Reason: ${reason}`;
+        let successMessage = `✅ *Leave request submitted successfully!*\n\n🚪 Departure: ${formattedDepartureTime}\n🔙 Expected return: ${formattedReturnTime}\n⏰ Duration: ${formattedDuration}\n📝 Reason: ${reason}`;
         
         if (taskEscalation) {
             successMessage += `\n🔄 Task Escalation: ${taskEscalation}`;
@@ -2535,31 +2542,58 @@ app.action('approve_leave', async ({ ack, body, client, action }) => {
         // Update leave request status
         await db.updateLeaveRequestStatus(requestId, 'approved', approverId);
         
-        // For intermediate logout, start the actual leave session
+        // For intermediate logout, handle immediate vs scheduled departure
         if (leaveRequest.leave_type === 'intermediate') {
-            await db.startLeaveSession(leaveRequest.user_id, leaveRequest.planned_duration, leaveRequest.reason);
+            const now = new Date();
+            const today = now.toDateString();
+            const departureTime = leaveRequest.departure_time;
             
-            // Send transparency message
-            const returnTime = leaveRequest.expected_return_time;
-            const formattedDuration = Utils.formatDuration(leaveRequest.planned_duration);
-            const message = Utils.formatLeaveTransparencyMessage(
-                leaveRequest.user_name, 
-                formattedDuration, 
-                leaveRequest.reason, 
-                returnTime, 
-                leaveRequest.task_escalation
-            );
+            // Check if departure is immediate (within next 15 minutes) or scheduled
+            let isImmediate = false;
+            if (departureTime) {
+                const departureDateTime = new Date(today + ' ' + Utils.parseTimeString(departureTime));
+                const timeDiff = departureDateTime - now;
+                isImmediate = timeDiff <= 15 * 60 * 1000; // 15 minutes or less
+            } else {
+                isImmediate = true; // Legacy format, start immediately
+            }
             
-            await client.chat.postMessage({
-                channel: config.bot.transparencyChannel,
-                text: message
-            });
-            
-            // Notify user
-            await client.chat.postMessage({
-                channel: leaveRequest.user_id,
-                text: `✅ *Leave Approved!*\n\nYour intermediate logout request has been approved by ${approverName}.\n⏰ Duration: ${formattedDuration}\n🕐 Expected return: ${returnTime}\n\nYour leave has started automatically. Use \`/return\` when you're back!`
-            });
+            if (isImmediate) {
+                // Start the leave session immediately
+                await db.startLeaveSession(leaveRequest.user_id, leaveRequest.planned_duration, leaveRequest.reason);
+                
+                // Send transparency message
+                const returnTime = leaveRequest.expected_return_time;
+                const formattedDuration = Utils.formatDuration(leaveRequest.planned_duration);
+                const message = Utils.formatLeaveTransparencyMessage(
+                    leaveRequest.user_name, 
+                    formattedDuration, 
+                    leaveRequest.reason, 
+                    returnTime, 
+                    leaveRequest.task_escalation,
+                    leaveRequest.departure_time || null
+                );
+                
+                await client.chat.postMessage({
+                    channel: config.bot.transparencyChannel,
+                    text: message
+                });
+                
+                // Notify user
+                await client.chat.postMessage({
+                    channel: leaveRequest.user_id,
+                    text: `✅ *Leave Approved!*\n\nYour intermediate logout request has been approved by ${approverName}.\n🚪 Departure: ${departureTime || 'Now'}\n🔙 Expected return: ${leaveRequest.expected_return_time}\n⏰ Duration: ${Utils.formatDuration(leaveRequest.planned_duration)}\n\nYour leave has started automatically. Use \`/return\` when you're back!`
+                });
+            } else {
+                // Scheduled departure - just notify user, don't start session yet
+                await client.chat.postMessage({
+                    channel: leaveRequest.user_id,
+                    text: `✅ *Leave Approved!*\n\nYour intermediate logout request has been approved by ${approverName}.\n🚪 Scheduled departure: ${departureTime}\n🔙 Expected return: ${leaveRequest.expected_return_time}\n⏰ Duration: ${Utils.formatDuration(leaveRequest.planned_duration)}\n\n⏰ Your leave session will start automatically at ${departureTime}. You'll receive a notification then.`
+                });
+                
+                // TODO: Implement scheduled departure logic (cron job or delayed task)
+                console.log(`📅 Scheduled departure for ${leaveRequest.user_name} at ${departureTime}`);
+            }
         } else {
             // For planned leave, post to transparency channel and notify user
             const dateRange = leaveRequest.start_date === leaveRequest.end_date ? 
