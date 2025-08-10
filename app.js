@@ -277,7 +277,6 @@ app.command('/logout', async ({ command, ack, client }) => {
                 type: 'modal',
                 callback_id: 'logout_selection_modal',
                 title: { type: 'plain_text', text: 'Time Request' },
-                submit: { type: 'plain_text', text: 'Continue' },
                 close: { type: 'plain_text', text: 'Cancel' },
                 private_metadata: command.channel_id,
                 blocks: [
@@ -293,7 +292,7 @@ app.command('/logout', async ({ command, ack, client }) => {
                         elements: [
                             {
                                 type: 'button',
-                                text: { type: 'plain_text', text: '🏃‍♂️ Early Logout' },
+                                text: { type: 'plain_text', text: '🚪 Early Logout' },
                                 action_id: 'select_early_logout',
                                 style: 'primary'
                             },
@@ -309,7 +308,7 @@ app.command('/logout', async ({ command, ack, client }) => {
                         type: 'section',
                         text: {
                             type: 'mrkdwn',
-                            text: '**🏃‍♂️ Early Logout:** Leave work before your standard end time\n**🕐 Late Login:** Start work after your standard start time'
+                            text: '*🚪 Early Logout:* Leave work before your standard end time\n*🕐 Late Login:* Start work after your standard start time'
                         }
                     },
                     {
