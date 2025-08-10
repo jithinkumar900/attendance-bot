@@ -428,7 +428,7 @@ app.view('logout_selection_modal', async ({ ack, body, client, view }) => {
                             action_id: 'escalation_input',
                             multiline: true,
                             placeholder: { type: 'plain_text', text: 'Describe any pending tasks and who you are handing them over to (e.g., "Completing API testing - will hand over to @jane.doe for final review")' },
-                            max_length: 500
+                            max_length: 3500
                         },
                         label: { type: 'plain_text', text: '🔄 Task Escalation/Handover *' }
                     },
@@ -513,9 +513,9 @@ app.view('logout_selection_modal', async ({ ack, body, client, view }) => {
                                 action_id: 'escalation_input',
                                 multiline: true,
                                 placeholder: { type: 'plain_text', text: 'Describe any tasks affected by late start and coverage arrangements (e.g., "Morning meeting covered by @john.doe, client calls rescheduled")' },
-                                max_length: 500
+                                max_length: 3500
                             },
-                            label: { type: 'plain_text', text: '🔄 Task Coverage/Impact *' }
+                            label: { type: 'plain_text', text: '🔄 Task Escalation *' }
                         },
                         {
                             type: 'context',
@@ -622,7 +622,7 @@ app.command('/intermediate_logout', async ({ command, ack, client }) => {
                                 action_id: 'escalation_input',
                                 multiline: true,
                                 placeholder: { type: 'plain_text', text: 'Describe the task you are working on and mention who you are assigning it to (e.g., "Working on API integration - escalating to @john.doe")' },
-                                max_length: 500
+                                max_length: 3500
                             },
                             label: { type: 'plain_text', text: '🔄 Task Escalation *' }
                         },
@@ -710,7 +710,7 @@ app.command('/intermediate_logout', async ({ command, ack, client }) => {
                             action_id: 'escalation_input',
                             multiline: true,
                             placeholder: { type: 'plain_text', text: 'Describe the task you are working on and mention who you are assigning it to (e.g., "Working on API integration - escalating to @john.doe")' },
-                            max_length: 500
+                            max_length: 3500
                         },
                         label: { type: 'plain_text', text: '🔄 Task Escalation *' }
                     },
@@ -836,7 +836,7 @@ app.command('/planned', async ({ command, ack, client }) => {
                             action_id: 'escalation_input',
                             multiline: true,
                             placeholder: { type: 'plain_text', text: 'Describe tasks and who you are assigning them to (e.g., "Project X - @john.doe, Client meeting - @jane.smith")' },
-                            max_length: 500
+                            max_length: 3500
                         },
                         label: { type: 'plain_text', text: '🔄 Task Escalation *' }
                     },
@@ -2380,7 +2380,7 @@ app.view('late_login_modal', async ({ ack, body, client, view }) => {
                     standard_start_time: !standardStartTime ? 'Please specify your standard work start time' : '',
                     actual_login_time: !actualLoginTime ? 'Please specify when you actually logged in' : '',
                     late_reason: !reason ? 'Please provide a reason for late login' : '',
-                    task_escalation: !taskEscalation ? 'Task coverage/impact description is required' : ''
+                    task_escalation: !taskEscalation ? 'Task escalation is required' : ''
                 }
             };
         }
@@ -2448,7 +2448,7 @@ app.view('late_login_modal', async ({ ack, body, client, view }) => {
                     type: 'section',
                     text: {
                         type: 'mrkdwn',
-                        text: `🕐 *Leave Request - Late Login*\n\n👤 *Employee:* ${userName}\n${!isToday ? `📅 *Date:* ${formattedDate}\n` : ''}🕘 *Standard Start:* ${formattedStandardStartTime}\n🚪 *Actual Login:* ${formattedActualLoginTime}\n⏰ *Time Shortfall:* ${formattedShortfall}\n📝 *Reason:* ${reason}\n\n🔄 *Task Coverage/Impact:*\n${taskEscalation}\n\n📋 <@${config.bot.leaveApprovalTag}> - Please review this late login request.`
+                        text: `🕐 *Leave Request - Late Login*\n\n👤 *Employee:* ${userName}\n${!isToday ? `📅 *Date:* ${formattedDate}\n` : ''}🕘 *Standard Start:* ${formattedStandardStartTime}\n🚪 *Actual Login:* ${formattedActualLoginTime}\n⏰ *Time Shortfall:* ${formattedShortfall}\n📝 *Reason:* ${reason}\n\n🔄 *Task Escalation:*\n${taskEscalation}\n\n📋 <@${config.bot.leaveApprovalTag}> - Please review this late login request.`
                     }
                 },
                 {
@@ -2482,7 +2482,7 @@ app.view('late_login_modal', async ({ ack, body, client, view }) => {
         let successMessage = `✅ *Late login request submitted successfully!*\n\n${!isToday ? `📅 Date: ${formattedDate}\n` : ''}🕘 Standard Start: ${formattedStandardStartTime}\n🚪 Actual Login: ${formattedActualLoginTime}\n⏰ Time Shortfall: ${formattedShortfall}\n📝 Reason: ${reason}`;
         
         if (taskEscalation) {
-            successMessage += `\n🔄 Task Coverage: ${taskEscalation}`;
+            successMessage += `\n🔄 Task Escalation: ${taskEscalation}`;
         }
         
         successMessage += `\n\n📋 Your request has been sent to ${config.bot.leaveApprovalChannel} for manager approval.\n📊 Upon approval, ${formattedShortfall} will be added to your pending work balance.`;

@@ -534,7 +534,7 @@ class Utils {
         message += `\n📝 *Reason:* ${reason}`;
         
         if (taskEscalation) {
-            message += `\n\n🔄 *Task Coverage/Impact:* ${taskEscalation}`;
+            message += `\n\n🔄 *Task Escalation:* ${taskEscalation}`;
         }
         
         return message;
