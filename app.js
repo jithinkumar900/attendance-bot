@@ -1681,7 +1681,342 @@ app.action('action_reset_pending', async ({ body, ack, respond }) => {
     }
 });
 
+// New Admin Actions - Time Management
 
+// 👤 Manage User Time
+app.action('action_manage_user_time', async ({ body, ack, respond, client }) => {
+    await ack();
+    try {
+        // Get all users for selection
+        const users = await db.getAllUsers();
+        
+        if (!users || users.length === 0) {
+            await respond({
+                text: "❌ No users found in the system.",
+                response_type: 'ephemeral'
+            });
+            return;
+        }
+
+        const userOptions = users.map(user => ({
+            text: { type: "plain_text", text: user.name },
+            value: user.id
+        }));
+
+        await respond({
+            text: "👤 *Manage User Time*\n\nSelect a user to manage their time:",
+            blocks: [
+                {
+                    type: "section",
+                    text: {
+                        type: "mrkdwn",
+                        text: "👤 *Manage User Time*\n\nSelect a user to view and manage their time balance:"
+                    }
+                },
+                {
+                    type: "actions",
+                    elements: [
+                        {
+                            type: "users_select",
+                            action_id: "select_user_for_time_management",
+                            placeholder: { type: "plain_text", text: "Choose a user..." }
+                        }
+                    ]
+                }
+            ],
+            replace_original: false,
+            response_type: 'ephemeral'
+        });
+    } catch (error) {
+        console.error('Error loading user time management:', error);
+        await respond({ text: "Error loading user selection.", response_type: 'ephemeral' });
+    }
+});
+
+// Handle user selection for time management
+app.action('select_user_for_time_management', async ({ body, ack, respond, client }) => {
+    await ack();
+    try {
+        const selectedUserId = body.actions[0].selected_user;
+        
+        // Get user info and current balances
+        const userInfo = await client.users.info({ user: selectedUserId });
+        const userName = userInfo.user.real_name || userInfo.user.name;
+        
+        // Get user's current pending work balance
+        const today = Utils.getCurrentDate();
+        const summary = await db.getDailySummary(selectedUserId, today);
+        const pendingMinutes = summary ? summary.pending_extra_work_minutes : 0;
+        
+        // Get user's recent leave requests
+        const recentRequests = await db.getUserLeaveRequests(selectedUserId, 30); // Last 30 days
+        
+        await respond({
+            text: `👤 *Managing Time for ${userName}*`,
+            blocks: [
+                {
+                    type: "section",
+                    text: {
+                        type: "mrkdwn",
+                        text: `👤 *Managing Time for ${userName}*\n\n📊 *Current Status:*\n⏱️ Pending Work: ${Utils.formatDuration(pendingMinutes)}\n📋 Recent Requests: ${recentRequests.length} (last 30 days)`
+                    }
+                },
+                {
+                    type: "section",
+                    text: {
+                        type: "mrkdwn",
+                        text: "*🛠️ Available Actions:*"
+                    }
+                },
+                {
+                    type: "actions",
+                    elements: [
+                        {
+                            type: "button",
+                            text: { type: "plain_text", text: "✅ Forgive Pending Work" },
+                            action_id: "forgive_pending_work",
+                            value: selectedUserId,
+                            style: "primary"
+                        },
+                        {
+                            type: "button",
+                            text: { type: "plain_text", text: "➖ Reduce Pending Work" },
+                            action_id: "reduce_pending_work",
+                            value: selectedUserId
+                        }
+                    ]
+                },
+                {
+                    type: "actions",
+                    elements: [
+                        {
+                            type: "button",
+                            text: { type: "plain_text", text: "➕ Add Pending Work" },
+                            action_id: "add_pending_work",
+                            value: selectedUserId
+                        },
+                        {
+                            type: "button",
+                            text: { type: "plain_text", text: "🔄 Reset All Balances" },
+                            action_id: "reset_user_balances",
+                            value: selectedUserId,
+                            style: "danger"
+                        }
+                    ]
+                },
+                {
+                    type: "actions",
+                    elements: [
+                        {
+                            type: "button",
+                            text: { type: "plain_text", text: "📊 View Detailed History" },
+                            action_id: "view_user_history",
+                            value: selectedUserId
+                        }
+                    ]
+                }
+            ],
+            replace_original: false,
+            response_type: 'ephemeral'
+        });
+    } catch (error) {
+        console.error('Error loading user time management details:', error);
+        await respond({ text: "Error loading user details.", response_type: 'ephemeral' });
+    }
+});
+
+// ✅ Forgive Pending Work
+app.action('forgive_pending_work', async ({ body, ack, respond, client }) => {
+    await ack();
+    try {
+        const userId = body.actions[0].value;
+        const adminId = body.user.id;
+        
+        // Get user info
+        const userInfo = await client.users.info({ user: userId });
+        const userName = userInfo.user.real_name || userInfo.user.name;
+        
+        // Get admin info
+        const adminInfo = await client.users.info({ user: adminId });
+        const adminName = adminInfo.user.real_name || adminInfo.user.name;
+        
+        // Get current pending work
+        const today = Utils.getCurrentDate();
+        const summary = await db.getDailySummary(userId, today);
+        const pendingMinutes = summary ? summary.pending_extra_work_minutes : 0;
+        
+        if (pendingMinutes <= 0) {
+            await respond({
+                text: `❌ ${userName} has no pending work to forgive.`,
+                response_type: 'ephemeral'
+            });
+            return;
+        }
+        
+        // Reset pending work to 0
+        await db.setPendingWork(userId, today, 0);
+        
+        // Log the admin action
+        console.log(`🎛️ ADMIN ACTION: ${adminName} forgave ${Utils.formatDuration(pendingMinutes)} pending work for ${userName}`);
+        
+        // Notify the user
+        await client.chat.postMessage({
+            channel: userId,
+            text: `✅ *Good News!*\n\nYour pending work balance of **${Utils.formatDuration(pendingMinutes)}** has been forgiven by admin.\n\n🎉 Your balance is now reset to 0. Fresh start!`
+        });
+        
+        await respond({
+            text: `✅ *Action Completed*\n\nForgave ${Utils.formatDuration(pendingMinutes)} of pending work for ${userName}.\n\nUser has been notified via DM.`,
+            response_type: 'ephemeral'
+        });
+    } catch (error) {
+        console.error('Error forgiving pending work:', error);
+        await respond({ text: "Error processing forgiveness action.", response_type: 'ephemeral' });
+    }
+});
+
+// ➕ Add Pending Work
+app.action('add_pending_work', async ({ body, ack, client }) => {
+    await ack();
+    try {
+        const userId = body.actions[0].value;
+        
+        // Get user info
+        const userInfo = await client.users.info({ user: userId });
+        const userName = userInfo.user.real_name || userInfo.user.name;
+        
+        // Open modal for addition amount
+        await client.views.open({
+            trigger_id: body.trigger_id,
+            view: {
+                type: 'modal',
+                callback_id: 'add_pending_work_modal',
+                title: { type: 'plain_text', text: 'Add Pending Work' },
+                submit: { type: 'plain_text', text: 'Add Time' },
+                close: { type: 'plain_text', text: 'Cancel' },
+                private_metadata: JSON.stringify({ userId, userName }),
+                blocks: [
+                    {
+                        type: 'section',
+                        text: {
+                            type: 'mrkdwn',
+                            text: `➕ *Add Pending Work*\n\n👤 *User:* ${userName}\n\nHow much pending work would you like to add?`
+                        }
+                    },
+                    {
+                        type: 'input',
+                        block_id: 'addition_amount',
+                        element: {
+                            type: 'number_input',
+                            action_id: 'minutes_input',
+                            placeholder: { type: 'plain_text', text: 'Enter minutes to add' },
+                            min_value: 1,
+                            max_value: 480 // 8 hours max
+                        },
+                        label: { type: 'plain_text', text: 'Minutes to Add' }
+                    },
+                    {
+                        type: 'input',
+                        block_id: 'addition_reason',
+                        element: {
+                            type: 'plain_text_input',
+                            action_id: 'reason_input',
+                            placeholder: { type: 'plain_text', text: 'Why are you adding pending work?' },
+                            max_length: 500
+                        },
+                        label: { type: 'plain_text', text: 'Reason for Addition' }
+                    }
+                ]
+            }
+        });
+    } catch (error) {
+        console.error('Error opening add pending work modal:', error);
+    }
+});
+
+// 🔄 Reset All Balances
+app.action('reset_user_balances', async ({ body, ack, respond, client }) => {
+    await ack();
+    try {
+        const userId = body.actions[0].value;
+        const adminId = body.user.id;
+        
+        // Get user info
+        const userInfo = await client.users.info({ user: userId });
+        const userName = userInfo.user.real_name || userInfo.user.name;
+        
+        // Get admin info
+        const adminInfo = await client.users.info({ user: adminId });
+        const adminName = adminInfo.user.real_name || adminInfo.user.name;
+        
+        // Get current pending work
+        const today = Utils.getCurrentDate();
+        const summary = await db.getDailySummary(userId, today);
+        const pendingMinutes = summary ? summary.pending_extra_work_minutes : 0;
+        
+        // Reset pending work to 0
+        await db.setPendingWork(userId, today, 0);
+        
+        // Log the admin action
+        console.log(`🎛️ ADMIN ACTION: ${adminName} reset all balances for ${userName} (was ${Utils.formatDuration(pendingMinutes)})`);
+        
+        // Notify the user
+        await client.chat.postMessage({
+            channel: userId,
+            text: `🔄 *Balance Reset*\n\nYour time balances have been reset by admin.\n\n📊 Previous pending work: ${Utils.formatDuration(pendingMinutes)}\n✅ Current balance: 0\n\n🎯 Fresh start!`
+        });
+        
+        await respond({
+            text: `✅ *All Balances Reset*\n\nReset all time balances for ${userName}.\n• Previous pending work: ${Utils.formatDuration(pendingMinutes)}\n• New balance: 0\n\nUser has been notified via DM.`,
+            response_type: 'ephemeral'
+        });
+    } catch (error) {
+        console.error('Error resetting user balances:', error);
+        await respond({ text: "Error resetting balances.", response_type: 'ephemeral' });
+    }
+});
+
+// 📊 View Detailed History
+app.action('view_user_history', async ({ body, ack, respond, client }) => {
+    await ack();
+    try {
+        const userId = body.actions[0].value;
+        
+        // Get user info
+        const userInfo = await client.users.info({ user: userId });
+        const userName = userInfo.user.real_name || userInfo.user.name;
+        
+        // Get recent data
+        const recentRequests = await db.getUserLeaveRequests(userId, 30);
+        const today = Utils.getCurrentDate();
+        const summary = await db.getDailySummary(userId, today);
+        
+        let historyText = `📊 *Detailed History for ${userName}*\n\n`;
+        historyText += `**Current Status:**\n`;
+        historyText += `⏱️ Pending Work: ${Utils.formatDuration(summary ? summary.pending_extra_work_minutes : 0)}\n\n`;
+        
+        if (recentRequests && recentRequests.length > 0) {
+            historyText += `**Recent Leave Requests (Last 30 days):**\n`;
+            recentRequests.slice(0, 10).forEach((request, index) => {
+                const status = request.status === 'approved' ? '✅' : request.status === 'denied' ? '❌' : '⏳';
+                const typeEmoji = request.leave_type === 'early' ? '🏃‍♂️' : 
+                                request.leave_type === 'late' ? '🕐' : 
+                                request.leave_type === 'intermediate' ? '🔄' : '📅';
+                historyText += `${index + 1}. ${status} ${typeEmoji} ${request.leave_type} - ${Utils.formatDate(request.requested_at)}\n`;
+            });
+        } else {
+            historyText += `**No recent leave requests found.**\n`;
+        }
+        
+        await respond({
+            text: historyText,
+            response_type: 'ephemeral'
+        });
+    } catch (error) {
+        console.error('Error viewing user history:', error);
+        await respond({ text: "Error loading user history.", response_type: 'ephemeral' });
+    }
+});
 
 // Reset user pending work
 app.action(/^reset_user_(.+)$/, async ({ body, ack, respond, action }) => {

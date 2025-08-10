@@ -219,6 +219,19 @@ class Database {
     }
 
     // User management
+    async getAllUsers() {
+        return new Promise((resolve, reject) => {
+            this.db.all(
+                `SELECT id, name, email, created_at FROM users ORDER BY name`,
+                [],
+                (err, rows) => {
+                    if (err) reject(err);
+                    else resolve(rows || []);
+                }
+            );
+        });
+    }
+
     async createUser(userId, name, email = null) {
         return new Promise((resolve, reject) => {
             this.db.run(
@@ -388,6 +401,48 @@ class Database {
     }
 
     // Daily summary management
+    async setPendingWork(userId, date, newAmount) {
+        return new Promise((resolve, reject) => {
+            // First get the current daily summary
+            this.db.get(
+                `SELECT * FROM daily_summaries WHERE user_id = ? AND date = ?`,
+                [userId, date],
+                (err, summary) => {
+                    if (err) {
+                        reject(err);
+                        return;
+                    }
+
+                    if (summary) {
+                        // Update existing summary
+                        this.db.run(
+                            `UPDATE daily_summaries 
+                            SET pending_extra_work_minutes = ?, updated_at = CURRENT_TIMESTAMP 
+                            WHERE user_id = ? AND date = ?`,
+                            [newAmount, userId, date],
+                            function(err) {
+                                if (err) reject(err);
+                                else resolve({ changes: this.changes, pendingMinutes: newAmount });
+                            }
+                        );
+                    } else {
+                        // Create new summary with pending work
+                        this.db.run(
+                            `INSERT INTO daily_summaries 
+                            (user_id, date, total_leave_minutes, total_extra_work_minutes, pending_extra_work_minutes) 
+                            VALUES (?, ?, 0, 0, ?)`,
+                            [userId, date, newAmount],
+                            function(err) {
+                                if (err) reject(err);
+                                else resolve({ changes: this.changes, pendingMinutes: newAmount });
+                            }
+                        );
+                    }
+                }
+            );
+        });
+    }
+
     async addToPendingWork(userId, date, additionalMinutes) {
         return new Promise((resolve, reject) => {
             // First get the current daily summary
@@ -708,19 +763,21 @@ class Database {
         });
     }
 
-    async getUserLeaveRequests(userId, limit = 10) {
+    async getUserLeaveRequests(userId, limitDays = null) {
         return new Promise((resolve, reject) => {
-            this.db.all(
-                `SELECT * FROM leave_requests 
-                WHERE user_id = ? 
-                ORDER BY requested_at DESC 
-                LIMIT ?`,
-                [userId, limit],
-                (err, requests) => {
-                    if (err) reject(err);
-                    else resolve(requests);
-                }
-            );
+            let query = `SELECT * FROM leave_requests WHERE user_id = ?`;
+            let params = [userId];
+            
+            if (limitDays) {
+                query += ` AND requested_at >= datetime('now', '-${limitDays} days')`;
+            }
+            
+            query += ` ORDER BY requested_at DESC`;
+            
+            this.db.all(query, params, (err, requests) => {
+                if (err) reject(err);
+                else resolve(requests || []);
+            });
         });
     }
 

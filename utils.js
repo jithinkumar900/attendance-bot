@@ -884,19 +884,72 @@ class Utils {
                 }
             },
             {
+                type: "section",
+                text: {
+                    type: "mrkdwn",
+                    text: "*🕐 Time Management*"
+                }
+            },
+            {
+                type: "actions",
+                elements: [
+                    {
+                        type: "button",
+                        text: { type: "plain_text", text: "👤 Manage User Time" },
+                        action_id: "action_manage_user_time",
+                        style: "primary"
+                    },
+                    {
+                        type: "button",
+                        text: { type: "plain_text", text: "📋 Override Leave Request" },
+                        action_id: "action_override_leave",
+                        style: "primary"
+                    }
+                ]
+            },
+            {
+                type: "section",
+                text: {
+                    type: "mrkdwn",
+                    text: "*📊 System Actions*"
+                }
+            },
+            {
                 type: "actions",
                 elements: [
                     {
                         type: "button",
                         text: { type: "plain_text", text: "📧 Send Reminders" },
-                        action_id: "action_send_reminders",
-                        style: "primary"
+                        action_id: "action_send_reminders"
                     },
                     {
                         type: "button",
                         text: { type: "plain_text", text: "🔄 Reset Pending" },
                         action_id: "action_reset_pending",
                         style: "danger"
+                    }
+                ]
+            },
+            {
+                type: "section",
+                text: {
+                    type: "mrkdwn",
+                    text: "*🎯 Quick Actions*"
+                }
+            },
+            {
+                type: "actions",
+                elements: [
+                    {
+                        type: "button",
+                        text: { type: "plain_text", text: "🆘 Emergency Override" },
+                        action_id: "action_emergency_override",
+                        style: "danger"
+                    },
+                    {
+                        type: "button",
+                        text: { type: "plain_text", text: "📈 Bulk Time Adjust" },
+                        action_id: "action_bulk_adjust"
                     }
                 ]
             }
