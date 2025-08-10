@@ -527,9 +527,9 @@ class Utils {
         const isToday = lateDate === new Date().toISOString().split('T')[0];
         const dateDisplay = isToday ? 'today' : `on ${this.formatDate(lateDate)}`;
         
-        let message = `🕐 *${userName}* had a late login ${dateDisplay}`;
-        message += `\n🕘 *Standard Start:* ${this.formatTime12Hour(standardStartTime)}`;
-        message += `\n🚪 *Actual Login:* ${this.formatTime12Hour(actualLoginTime)}`;
+        let message = `🕐 *${userName}* is going to have a late login ${dateDisplay}`;
+        message += `\n🕘 *Standard Start:* ${standardStartTime}`;
+        message += `\n🚪 *Actual Login:* ${actualLoginTime}`;
         message += `\n⏰ *Time Shortfall:* ${this.formatDuration(shortfallMinutes)}`;
         message += `\n📝 *Reason:* ${reason}`;
         

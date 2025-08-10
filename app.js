@@ -2520,7 +2520,9 @@ app.view('intermediate_logout_modal', async ({ ack, body, client, view }) => {
 
 // Handle early logout modal submission
 app.view('early_logout_modal', async ({ ack, body, client, view }) => {
-    await ack();
+    await ack({
+        response_action: 'clear'
+    });
     
     try {
         const user_id = body.user.id;
@@ -2680,7 +2682,9 @@ app.view('early_logout_modal', async ({ ack, body, client, view }) => {
 
 // Handle late login modal submission
 app.view('late_login_modal', async ({ ack, body, client, view }) => {
-    await ack();
+    await ack({
+        response_action: 'clear'
+    });
     
     try {
         const user_id = body.user.id;
@@ -2732,7 +2736,7 @@ app.view('late_login_modal', async ({ ack, body, client, view }) => {
         // Create user in database if not exists
         await db.createUser(user_id, userName, userInfo.user.profile?.email);
         
-        // Format times for display
+        // Times from Slack are already in 24-hour format (HH:MM), format for display
         const formattedStandardStartTime = Utils.formatTime12Hour(standardStartTime);
         const formattedActualLoginTime = Utils.formatTime12Hour(actualLoginTime);
         const formattedShortfall = Utils.formatDuration(shortfallMinutes);
