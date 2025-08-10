@@ -420,7 +420,7 @@ app.action('select_early_logout', async ({ ack, body, client }) => {
                             action_id: 'escalation_input',
                             multiline: true,
                             placeholder: { type: 'plain_text', text: 'Describe any pending tasks and who you are handing them over to (e.g., "Completing API testing - will hand over to @jane.doe for final review")' },
-                            max_length: 3500
+                            max_length: 3000
                         },
                         label: { type: 'plain_text', text: '🔄 Task Escalation/Handover *' }
                     },
@@ -516,7 +516,7 @@ app.action('select_late_login', async ({ ack, body, client }) => {
                                 action_id: 'escalation_input',
                                 multiline: true,
                                 placeholder: { type: 'plain_text', text: 'Describe any tasks affected by late start and coverage arrangements (e.g., "Morning meeting covered by @john.doe, client calls rescheduled")' },
-                                max_length: 3500
+                                max_length: 3000
                             },
                             label: { type: 'plain_text', text: '🔄 Task Escalation *' }
                         },
@@ -616,7 +616,7 @@ app.command('/intermediate_logout', async ({ command, ack, client }) => {
                                 action_id: 'escalation_input',
                                 multiline: true,
                                 placeholder: { type: 'plain_text', text: 'Describe the task you are working on and mention who you are assigning it to (e.g., "Working on API integration - escalating to @john.doe")' },
-                                max_length: 3500
+                                max_length: 3000
                             },
                             label: { type: 'plain_text', text: '🔄 Task Escalation *' }
                         },
@@ -704,7 +704,7 @@ app.command('/intermediate_logout', async ({ command, ack, client }) => {
                             action_id: 'escalation_input',
                             multiline: true,
                             placeholder: { type: 'plain_text', text: 'Describe the task you are working on and mention who you are assigning it to (e.g., "Working on API integration - escalating to @john.doe")' },
-                            max_length: 3500
+                            max_length: 3000
                         },
                         label: { type: 'plain_text', text: '🔄 Task Escalation *' }
                     },
@@ -830,7 +830,7 @@ app.command('/planned', async ({ command, ack, client }) => {
                             action_id: 'escalation_input',
                             multiline: true,
                             placeholder: { type: 'plain_text', text: 'Describe tasks and who you are assigning them to (e.g., "Project X - @john.doe, Client meeting - @jane.smith")' },
-                            max_length: 3500
+                            max_length: 3000
                         },
                         label: { type: 'plain_text', text: '🔄 Task Escalation *' }
                     },
