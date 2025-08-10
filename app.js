@@ -2561,11 +2561,27 @@ app.action('approve_leave', async ({ ack, body, client, action }) => {
                 text: `✅ *Leave Approved!*\n\nYour intermediate logout request has been approved by ${approverName}.\n⏰ Duration: ${formattedDuration}\n🕐 Expected return: ${returnTime}\n\nYour leave has started automatically. Use \`/return\` when you're back!`
             });
         } else {
-            // For planned leave, just notify user
+            // For planned leave, post to transparency channel and notify user
             const dateRange = leaveRequest.start_date === leaveRequest.end_date ? 
                 Utils.formatDate(leaveRequest.start_date) : 
                 `${Utils.formatDate(leaveRequest.start_date)} - ${Utils.formatDate(leaveRequest.end_date)}`;
             
+            // Post planned leave approval to transparency channel
+            const plannedLeaveMessage = Utils.formatPlannedLeaveMessage(
+                leaveRequest.user_name, 
+                'full_day', // Default to full day for now
+                dateRange, 
+                leaveRequest.leave_duration_days,
+                leaveRequest.reason, 
+                leaveRequest.task_escalation
+            );
+            
+            await client.chat.postMessage({
+                channel: config.bot.transparencyChannel,
+                text: plannedLeaveMessage
+            });
+            
+            // Notify user
             await client.chat.postMessage({
                 channel: leaveRequest.user_id,
                 text: `✅ *Leave Approved!*\n\nYour planned leave request has been approved by ${approverName}.\n📅 Dates: ${dateRange}\n📝 Reason: ${leaveRequest.reason}`
