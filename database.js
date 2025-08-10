@@ -150,6 +150,39 @@ class Database {
                 }
             }
         );
+
+        // Migration: Add early logout fields to leave_requests table
+        this.db.run(
+            `ALTER TABLE leave_requests ADD COLUMN standard_end_time TEXT`,
+            (err) => {
+                if (err) {
+                    // This is expected if the column already exists
+                    if (err.message.includes('duplicate column name')) {
+                        console.log('✅ Migration: standard_end_time column already exists');
+                    } else {
+                        console.error('Migration error:', err);
+                    }
+                } else {
+                    console.log('✅ Migration: Added standard_end_time column to leave_requests');
+                }
+            }
+        );
+
+        this.db.run(
+            `ALTER TABLE leave_requests ADD COLUMN shortfall_minutes INTEGER`,
+            (err) => {
+                if (err) {
+                    // This is expected if the column already exists
+                    if (err.message.includes('duplicate column name')) {
+                        console.log('✅ Migration: shortfall_minutes column already exists');
+                    } else {
+                        console.error('Migration error:', err);
+                    }
+                } else {
+                    console.log('✅ Migration: Added shortfall_minutes column to leave_requests');
+                }
+            }
+        );
     }
 
     // User management
@@ -322,6 +355,51 @@ class Database {
     }
 
     // Daily summary management
+    async addToPendingWork(userId, date, additionalMinutes) {
+        return new Promise((resolve, reject) => {
+            // First get the current daily summary
+            this.db.get(
+                `SELECT * FROM daily_summaries WHERE user_id = ? AND date = ?`,
+                [userId, date],
+                (err, summary) => {
+                    if (err) {
+                        reject(err);
+                        return;
+                    }
+
+                    const currentPending = summary ? summary.pending_extra_work_minutes : 0;
+                    const newPending = currentPending + additionalMinutes;
+
+                    if (summary) {
+                        // Update existing summary
+                        this.db.run(
+                            `UPDATE daily_summaries 
+                            SET pending_extra_work_minutes = ?, updated_at = CURRENT_TIMESTAMP 
+                            WHERE user_id = ? AND date = ?`,
+                            [newPending, userId, date],
+                            function(err) {
+                                if (err) reject(err);
+                                else resolve({ changes: this.changes, pendingMinutes: newPending });
+                            }
+                        );
+                    } else {
+                        // Create new summary with pending work
+                        this.db.run(
+                            `INSERT INTO daily_summaries 
+                            (user_id, date, total_leave_minutes, total_extra_work_minutes, pending_extra_work_minutes) 
+                            VALUES (?, ?, 0, 0, ?)`,
+                            [userId, date, additionalMinutes],
+                            function(err) {
+                                if (err) reject(err);
+                                else resolve({ changes: this.changes, pendingMinutes: additionalMinutes });
+                            }
+                        );
+                    }
+                }
+            );
+        });
+    }
+
     async updateDailySummary(userId, date) {
         return new Promise((resolve, reject) => {
             // Calculate totals for the day
@@ -531,16 +609,20 @@ class Database {
                 leaveDate,
                 startDate,
                 endDate,
-                leaveDurationDays
+                leaveDurationDays,
+                standardEndTime,
+                shortfallMinutes
             } = additionalData;
 
             this.db.run(
                 `INSERT INTO leave_requests 
                 (user_id, user_name, leave_type, reason, task_escalation, planned_duration, 
-                expected_return_time, departure_time, leave_date, start_date, end_date, leave_duration_days) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                expected_return_time, departure_time, leave_date, start_date, end_date, leave_duration_days,
+                standard_end_time, shortfall_minutes) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [userId, userName, leaveType, reason, taskEscalation, plannedDuration, 
-                expectedReturnTime, departureTime, leaveDate, startDate, endDate, leaveDurationDays],
+                expectedReturnTime, departureTime, leaveDate, startDate, endDate, leaveDurationDays,
+                standardEndTime, shortfallMinutes],
                 function(err) {
                     if (err) reject(err);
                     else resolve(this.lastID);

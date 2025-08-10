@@ -124,6 +124,23 @@ class Utils {
         return timeString;
     }
 
+    // Calculate shortfall minutes between early departure and standard end time
+    static calculateShortfallMinutes(standardEndTime, earlyDepartureTime) {
+        // Parse both times to get minutes from midnight
+        const parseTimeToMinutes = (timeString) => {
+            const time24 = this.parseTimeString(timeString);
+            const [hours, minutes] = time24.split(':').map(Number);
+            return hours * 60 + minutes;
+        };
+
+        const standardMinutes = parseTimeToMinutes(standardEndTime);
+        const departureMinutes = parseTimeToMinutes(earlyDepartureTime);
+
+        // Calculate shortfall (should be positive if leaving early)
+        const shortfall = standardMinutes - departureMinutes;
+        return Math.max(0, shortfall); // Return 0 if not actually leaving early
+    }
+
     // Format date for display
     static formatDate(date) {
         return moment(date).format('MMM DD, YYYY');
@@ -462,6 +479,24 @@ class Utils {
             message += ` (${daysDiff} days)`;
         }
         message += `\n• *Reason:* ${reason}`;
+        
+        if (taskEscalation) {
+            message += `\n\n🔄 *Task Escalation:* ${taskEscalation}`;
+        }
+        
+        return message;
+    }
+
+    // Create early logout transparency message
+    static formatEarlyLogoutMessage(userName, earlyDate, standardEndTime, earlyDepartureTime, shortfallMinutes, reason, taskEscalation = '') {
+        const isToday = earlyDate === new Date().toISOString().split('T')[0];
+        const dateDisplay = isToday ? 'today' : `on ${this.formatDate(earlyDate)}`;
+        
+        let message = `🏃‍♂️ *${userName}* is leaving early ${dateDisplay}`;
+        message += `\n🕘 *Standard End:* ${this.formatTime12Hour(standardEndTime)}`;
+        message += `\n🚪 *Early Departure:* ${this.formatTime12Hour(earlyDepartureTime)}`;
+        message += `\n⏰ *Time Shortfall:* ${this.formatDuration(shortfallMinutes)}`;
+        message += `\n📝 *Reason:* ${reason}`;
         
         if (taskEscalation) {
             message += `\n\n🔄 *Task Escalation:* ${taskEscalation}`;

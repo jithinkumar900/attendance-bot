@@ -265,6 +265,116 @@ cron.schedule('* * * * *', async () => {
 // SLASH COMMANDS
 // ================================
 
+// Handle /early_logout command
+app.command('/early_logout', async ({ command, ack, client }) => {
+    await ack();
+
+    try {
+        // Open early logout modal
+        await client.views.open({
+            trigger_id: command.trigger_id,
+            view: {
+                type: 'modal',
+                callback_id: 'early_logout_modal',
+                title: { type: 'plain_text', text: 'Early Logout Request' },
+                submit: { type: 'plain_text', text: 'Submit Request' },
+                close: { type: 'plain_text', text: 'Cancel' },
+                private_metadata: command.channel_id,
+                blocks: [
+                    {
+                        type: 'section',
+                        text: {
+                            type: 'mrkdwn',
+                            text: '🏃‍♂️ *Request Early Logout*\n\nPlease provide your work schedule and departure details:'
+                        }
+                    },
+                    {
+                        type: 'input',
+                        block_id: 'early_logout_date',
+                        element: {
+                            type: 'datepicker',
+                            action_id: 'early_date_select',
+                            placeholder: { type: 'plain_text', text: 'Select early logout date' },
+                            initial_date: new Date().toISOString().split('T')[0] // Today's date as default
+                        },
+                        label: { type: 'plain_text', text: '📅 Early Logout Date' }
+                    },
+                    {
+                        type: 'input',
+                        block_id: 'standard_end_time',
+                        element: {
+                            type: 'timepicker',
+                            action_id: 'standard_end_time_select',
+                            placeholder: { type: 'plain_text', text: 'Your normal work end time' }
+                        },
+                        label: { type: 'plain_text', text: '🕘 Your Standard Work End Time *' }
+                    },
+                    {
+                        type: 'input',
+                        block_id: 'early_departure_time',
+                        element: {
+                            type: 'timepicker',
+                            action_id: 'early_departure_time_select',
+                            placeholder: { type: 'plain_text', text: 'When you want to leave early' }
+                        },
+                        label: { type: 'plain_text', text: '🚪 Early Departure Time *' }
+                    },
+                    {
+                        type: 'input',
+                        block_id: 'early_reason',
+                        element: {
+                            type: 'plain_text_input',
+                            action_id: 'reason_input',
+                            placeholder: { type: 'plain_text', text: 'Doctor appointment, family emergency, personal work, etc.' },
+                            max_length: 200
+                        },
+                        label: { type: 'plain_text', text: '📝 Reason for Early Logout *' }
+                    },
+                    {
+                        type: 'input',
+                        block_id: 'task_escalation',
+                        element: {
+                            type: 'plain_text_input',
+                            action_id: 'escalation_input',
+                            multiline: true,
+                            placeholder: { type: 'plain_text', text: 'Describe any pending tasks and who you are handing them over to (e.g., "Completing API testing - will hand over to @jane.doe for final review")' },
+                            max_length: 500
+                        },
+                        label: { type: 'plain_text', text: '🔄 Task Escalation/Handover *' }
+                    },
+                    {
+                        type: 'context',
+                        elements: [
+                            {
+                                type: 'mrkdwn',
+                                text: '⚠️ *All fields are required* | 📊 *Time shortfall will be added to your pending work balance*'
+                            }
+                        ]
+                    }
+                ]
+            }
+        });
+
+    } catch (error) {
+        console.error('Error in early logout modal:', error);
+        
+        // Provide helpful error message
+        let errorMessage = "Sorry, there was an error opening the early logout form.";
+        
+        if (error.message && error.message.includes('timeout')) {
+            errorMessage += " The service may be warming up. Please wait 10 seconds and try again.";
+        } else if (!connectionWarmed) {
+            errorMessage += " Connection is being established. Please try again in a moment.";
+        }
+        
+        await client.chat.postEphemeral({
+            channel: command.channel_id,
+            user: command.user_id,
+            text: `❌ ${errorMessage}`
+        });
+    }
+});
+
 // Start intermediate logout - Interactive Modal
 app.command('/intermediate_logout', async ({ command, ack, client }) => {
     await ack();
@@ -1914,6 +2024,166 @@ app.view('intermediate_logout_modal', async ({ ack, body, client, view }) => {
     }
 });
 
+// Handle early logout modal submission
+app.view('early_logout_modal', async ({ ack, body, client, view }) => {
+    await ack();
+    
+    try {
+        const user_id = body.user.id;
+        
+        // Extract values from the modal
+        const values = view.state.values;
+        
+        // Get date and times
+        const earlyDate = values.early_logout_date?.early_date_select?.selected_date;
+        const standardEndTime = values.standard_end_time?.standard_end_time_select?.selected_time;
+        const earlyDepartureTime = values.early_departure_time?.early_departure_time_select?.selected_time;
+        
+        // Get reason and task escalation
+        const reason = values.early_reason?.reason_input?.value?.trim();
+        const taskEscalation = values.task_escalation?.escalation_input?.value?.trim();
+        
+        // Validate all required fields
+        if (!earlyDate || !standardEndTime || !earlyDepartureTime || !reason || !taskEscalation) {
+            return {
+                response_action: 'errors',
+                errors: {
+                    early_logout_date: !earlyDate ? 'Please select an early logout date' : '',
+                    standard_end_time: !standardEndTime ? 'Please specify your standard work end time' : '',
+                    early_departure_time: !earlyDepartureTime ? 'Please specify when you want to leave early' : '',
+                    early_reason: !reason ? 'Please provide a reason for early logout' : '',
+                    task_escalation: !taskEscalation ? 'Task escalation is required' : ''
+                }
+            };
+        }
+        
+        // Validate that the early date is not in the past
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const selectedDate = new Date(earlyDate);
+        
+        if (selectedDate < today) {
+            return {
+                response_action: 'errors',
+                errors: {
+                    early_logout_date: 'Early logout date cannot be in the past'
+                }
+            };
+        }
+        
+        // Validate that early departure is before standard end time
+        const shortfallMinutes = Utils.calculateShortfallMinutes(standardEndTime, earlyDepartureTime);
+        
+        if (shortfallMinutes <= 0) {
+            return {
+                response_action: 'errors',
+                errors: {
+                    early_departure_time: 'Early departure time must be before your standard work end time'
+                }
+            };
+        }
+        
+        // Get user info
+        const userInfo = await client.users.info({ user: user_id });
+        const userName = userInfo.user.real_name || userInfo.user.name;
+        
+        // Create user in database if not exists
+        await db.createUser(user_id, userName, userInfo.user.profile?.email);
+        
+        // Format times for display
+        const formattedStandardEndTime = Utils.formatTime12Hour(standardEndTime);
+        const formattedEarlyDepartureTime = Utils.formatTime12Hour(earlyDepartureTime);
+        const formattedShortfall = Utils.formatDuration(shortfallMinutes);
+        const formattedDate = Utils.formatDate(earlyDate);
+        
+        // Create leave request for approval
+        const requestId = await db.createLeaveRequest(
+            user_id,
+            userName,
+            'early',
+            reason,
+            taskEscalation,
+            {
+                leaveDate: earlyDate,
+                standardEndTime: formattedStandardEndTime,
+                shortfallMinutes: shortfallMinutes,
+                departureTime: formattedEarlyDepartureTime
+            }
+        );
+        
+        // Send approval request to leave-approval channel with interactive buttons
+        const isToday = earlyDate === new Date().toISOString().split('T')[0];
+        const approvalMessage = {
+            text: `🏃‍♂️ *Leave Request - Early Logout*`,
+            blocks: [
+                {
+                    type: 'section',
+                    text: {
+                        type: 'mrkdwn',
+                        text: `🏃‍♂️ *Leave Request - Early Logout*\n\n👤 *Employee:* ${userName}\n${!isToday ? `📅 *Date:* ${formattedDate}\n` : ''}🕘 *Standard End:* ${formattedStandardEndTime}\n🚪 *Early Departure:* ${formattedEarlyDepartureTime}\n⏰ *Time Shortfall:* ${formattedShortfall}\n📝 *Reason:* ${reason}\n\n🔄 *Task Escalation:*\n${taskEscalation}\n\n📋 <@${config.bot.leaveApprovalTag}> - Please review this early logout request.`
+                    }
+                },
+                {
+                    type: 'actions',
+                    elements: [
+                        {
+                            type: 'button',
+                            text: { type: 'plain_text', text: '✅ Approve' },
+                            style: 'primary',
+                            action_id: 'approve_leave',
+                            value: requestId.toString()
+                        },
+                        {
+                            type: 'button',
+                            text: { type: 'plain_text', text: '❌ Deny' },
+                            style: 'danger',
+                            action_id: 'deny_leave',
+                            value: requestId.toString()
+                        }
+                    ]
+                }
+            ]
+        };
+        
+        await client.chat.postMessage({
+            channel: config.bot.leaveApprovalChannel,
+            ...approvalMessage
+        });
+        
+        // Send success message to user (private)
+        let successMessage = `✅ *Early logout request submitted successfully!*\n\n${!isToday ? `📅 Date: ${formattedDate}\n` : ''}🕘 Standard End: ${formattedStandardEndTime}\n🚪 Early Departure: ${formattedEarlyDepartureTime}\n⏰ Time Shortfall: ${formattedShortfall}\n📝 Reason: ${reason}`;
+        
+        if (taskEscalation) {
+            successMessage += `\n🔄 Task Escalation: ${taskEscalation}`;
+        }
+        
+        successMessage += `\n\n📋 Your request has been sent to ${config.bot.leaveApprovalChannel} for manager approval.\n📊 Upon approval, ${formattedShortfall} will be added to your pending work balance.`;
+        
+        // Send confirmation in the channel where user requested
+        const channelId = body.view.private_metadata;
+        await client.chat.postMessage({
+            channel: channelId,
+            text: `📋 *Early Logout Request Submitted*\n\n${userName} has submitted an early logout request and is awaiting approval.`
+        });
+        
+        await client.chat.postEphemeral({
+            channel: channelId,
+            user: user_id,
+            text: successMessage
+        });
+        
+    } catch (error) {
+        console.error('Error processing early logout modal:', error);
+        
+        // Send error message to user
+        await client.chat.postEphemeral({
+            channel: config.bot.transparencyChannel,
+            user: body.user.id,
+            text: "❌ Sorry, there was an error submitting your early logout request. Please try again."
+        });
+    }
+});
+
 // Handle extend leave modal submission
 app.view('extend_leave_modal', async ({ ack, body, client, view }) => {
     await ack();
@@ -2637,6 +2907,41 @@ app.action('approve_leave', async ({ ack, body, client, action }) => {
                 // TODO: Implement scheduled departure logic (cron job or delayed task)
                 console.log(`📅 Scheduled departure for ${leaveRequest.user_name} ${scheduleText}`);
             }
+        } else if (leaveRequest.leave_type === 'early') {
+            // For early logout, add shortfall to pending work and post to transparency channel
+            const shortfallMinutes = leaveRequest.shortfall_minutes || 0;
+            const formattedShortfall = Utils.formatDuration(shortfallMinutes);
+            
+            // Add shortfall to user's pending extra work balance
+            if (shortfallMinutes > 0) {
+                const today = Utils.getCurrentDate();
+                await db.addToPendingWork(leaveRequest.user_id, today, shortfallMinutes);
+            }
+            
+            // Post early logout approval to transparency channel
+            const earlyLogoutMessage = Utils.formatEarlyLogoutMessage(
+                leaveRequest.user_name,
+                leaveRequest.leave_date || Utils.getCurrentDate(),
+                leaveRequest.standard_end_time,
+                leaveRequest.departure_time,
+                shortfallMinutes,
+                leaveRequest.reason,
+                leaveRequest.task_escalation
+            );
+            
+            await client.chat.postMessage({
+                channel: config.bot.transparencyChannel,
+                text: earlyLogoutMessage
+            });
+            
+            // Notify user
+            const isToday = leaveRequest.leave_date === Utils.getCurrentDate();
+            const dateDisplay = isToday ? 'Today' : Utils.formatDate(leaveRequest.leave_date);
+            
+            await client.chat.postMessage({
+                channel: leaveRequest.user_id,
+                text: `✅ *Early Logout Approved!*\n\nYour early logout request has been approved by ${approverName}.\n📅 Date: ${dateDisplay}\n🚪 Early Departure: ${leaveRequest.departure_time}\n🕘 Standard End: ${leaveRequest.standard_end_time}\n⏰ Time Shortfall: ${formattedShortfall}\n\n📊 ${formattedShortfall} has been added to your pending work balance.`
+            });
         } else {
             // For planned leave, post to transparency channel and notify user
             const dateRange = leaveRequest.start_date === leaveRequest.end_date ? 
@@ -2666,16 +2971,19 @@ app.action('approve_leave', async ({ ack, body, client, action }) => {
         }
         
         // Update the original message to show approval
+        const leaveTypeDisplay = leaveRequest.leave_type === 'intermediate' ? 'Intermediate Logout' : 
+                                leaveRequest.leave_type === 'early' ? 'Early Logout' : 'Planned Leave';
+        
         await client.chat.update({
             channel: body.channel.id,
             ts: body.message.ts,
-            text: `✅ *Leave Request - ${leaveRequest.leave_type === 'intermediate' ? 'Intermediate Logout' : 'Planned Leave'}* (APPROVED)`,
+            text: `✅ *Leave Request - ${leaveTypeDisplay}* (APPROVED)`,
             blocks: [
                 {
                     type: 'section',
                     text: {
                         type: 'mrkdwn',
-                        text: `✅ *Leave Request - ${leaveRequest.leave_type === 'intermediate' ? 'Intermediate Logout' : 'Planned Leave'}* (APPROVED)\n\n👤 *Employee:* ${leaveRequest.user_name}\n📝 *Reason:* ${leaveRequest.reason}\n\n✅ *Approved by:* ${approverName}\n⏰ *Approved at:* ${Utils.getCurrentIST()}`
+                        text: `✅ *Leave Request - ${leaveTypeDisplay}* (APPROVED)\n\n👤 *Employee:* ${leaveRequest.user_name}\n📝 *Reason:* ${leaveRequest.reason}\n\n✅ *Approved by:* ${approverName}\n⏰ *Approved at:* ${Utils.getCurrentIST()}`
                     }
                 }
             ]
@@ -2737,22 +3045,28 @@ app.action('deny_leave', async ({ ack, body, client, action }) => {
         await db.updateLeaveRequestStatus(requestId, 'denied', denierId);
         
         // Notify user
+        const leaveTypeText = leaveRequest.leave_type === 'intermediate' ? 'intermediate logout' :
+                             leaveRequest.leave_type === 'early' ? 'early logout' : 'planned leave';
+        
         await client.chat.postMessage({
             channel: leaveRequest.user_id,
-            text: `❌ *Leave Request Denied*\n\nYour ${leaveRequest.leave_type === 'intermediate' ? 'intermediate logout' : 'planned leave'} request has been denied by ${denierName}.\n📝 Reason: ${leaveRequest.reason}\n\nPlease discuss with your manager for more details.`
+            text: `❌ *Leave Request Denied*\n\nYour ${leaveTypeText} request has been denied by ${denierName}.\n📝 Reason: ${leaveRequest.reason}\n\nPlease discuss with your manager for more details.`
         });
         
         // Update the original message to show denial
+        const leaveTypeDisplay = leaveRequest.leave_type === 'intermediate' ? 'Intermediate Logout' :
+                                leaveRequest.leave_type === 'early' ? 'Early Logout' : 'Planned Leave';
+        
         await client.chat.update({
             channel: body.channel.id,
             ts: body.message.ts,
-            text: `❌ *Leave Request - ${leaveRequest.leave_type === 'intermediate' ? 'Intermediate Logout' : 'Planned Leave'}* (DENIED)`,
+            text: `❌ *Leave Request - ${leaveTypeDisplay}* (DENIED)`,
             blocks: [
                 {
                     type: 'section',
                     text: {
                         type: 'mrkdwn',
-                        text: `❌ *Leave Request - ${leaveRequest.leave_type === 'intermediate' ? 'Intermediate Logout' : 'Planned Leave'}* (DENIED)\n\n👤 *Employee:* ${leaveRequest.user_name}\n📝 *Reason:* ${leaveRequest.reason}\n\n❌ *Denied by:* ${denierName}\n⏰ *Denied at:* ${Utils.getCurrentIST()}`
+                        text: `❌ *Leave Request - ${leaveTypeDisplay}* (DENIED)\n\n👤 *Employee:* ${leaveRequest.user_name}\n📝 *Reason:* ${leaveRequest.reason}\n\n❌ *Denied by:* ${denierName}\n⏰ *Denied at:* ${Utils.getCurrentIST()}`
                     }
                 }
             ]
@@ -3043,6 +3357,7 @@ async function startApp(retryCount = 0) {
         console.log(`  • Admin password set: ${config.bot.adminPassword ? '✅' : '❌'}`);
         console.log(`  • Keepalive: ${RENDER_URL ? '✅ Enabled' : '❌ Disabled (add RENDER_URL env var)'}`);
         console.log('🚀 Available commands:');
+        console.log('  /early_logout - Request early logout (requires approval)');
         console.log('  /intermediate_logout <duration> <reason> - Start intermediate logout (requires approval)');
         console.log('  /planned - Request planned leave (requires approval)');
         console.log('  /return - End current leave');
