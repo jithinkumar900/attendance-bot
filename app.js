@@ -378,8 +378,19 @@ app.command('/intermediate_logout', async ({ command, ack, client }) => {
                         type: 'section',
                         text: {
                             type: 'mrkdwn',
-                            text: '🕐 *When will you leave and return?*\n\nSpecify your departure and expected return times:'
+                            text: '📅 *When will you take intermediate logout?*\n\nSelect the date and times for your leave:'
                         }
+                    },
+                    {
+                        type: 'input',
+                        block_id: 'leave_date',
+                        element: {
+                            type: 'datepicker',
+                            action_id: 'leave_date_select',
+                            placeholder: { type: 'plain_text', text: 'Select leave date' },
+                            initial_date: new Date().toISOString().split('T')[0] // Today's date as default
+                        },
+                        label: { type: 'plain_text', text: '📅 Leave Date' }
                     },
                     {
                         type: 'input',
@@ -1702,7 +1713,8 @@ app.view('intermediate_logout_modal', async ({ ack, body, client, view }) => {
         // Extract values from the modal
         const values = view.state.values;
         
-        // Get departure and return times
+        // Get leave date and times
+        const leaveDate = values.leave_date?.leave_date_select?.selected_date;
         const departureTime = values.departure_time?.departure_time_select?.selected_time;
         const returnTime = values.return_time?.return_time_select?.selected_time;
         
@@ -1712,21 +1724,35 @@ app.view('intermediate_logout_modal', async ({ ack, body, client, view }) => {
         // Get task escalation (required)
         const taskEscalation = values.task_escalation?.escalation_input?.value?.trim() || '';
         
-        // Validate times
-        if (!departureTime || !returnTime) {
+        // Validate date and times
+        if (!leaveDate || !departureTime || !returnTime) {
             return {
                 response_action: 'errors',
                 errors: {
+                    leave_date: !leaveDate ? 'Please select a leave date' : '',
                     departure_time: !departureTime ? 'Please select a departure time' : '',
                     return_time: !returnTime ? 'Please select a return time' : ''
                 }
             };
         }
         
-        // Parse times and calculate duration
+        // Validate that the leave date is not in the past
         const today = new Date();
-        const departureDateTime = new Date(today.toDateString() + ' ' + departureTime);
-        const returnDateTime = new Date(today.toDateString() + ' ' + returnTime);
+        today.setHours(0, 0, 0, 0);
+        const selectedDate = new Date(leaveDate);
+        
+        if (selectedDate < today) {
+            return {
+                response_action: 'errors',
+                errors: {
+                    leave_date: 'Leave date cannot be in the past'
+                }
+            };
+        }
+        
+        // Parse times and calculate duration
+        const departureDateTime = new Date(leaveDate + 'T' + departureTime);
+        const returnDateTime = new Date(leaveDate + 'T' + returnTime);
         
         // Check if return time is after departure time
         if (returnDateTime <= departureDateTime) {
@@ -1777,10 +1803,16 @@ app.view('intermediate_logout_modal', async ({ ack, body, client, view }) => {
         // Create user in database if not exists
         await db.createUser(user_id, userName, userInfo.user.profile?.email);
         
-        // Format times for display
+        // Format date and times for display
+        const formattedLeaveDate = Utils.formatDate(leaveDate);
         const formattedDepartureTime = Utils.formatTime12Hour(departureTime);
         const formattedReturnTime = Utils.formatTime12Hour(returnTime);
         const formattedDuration = Utils.formatDuration(durationMinutes);
+        
+        // Create full date-time strings for display
+        const isToday = leaveDate === new Date().toISOString().split('T')[0];
+        const departureDisplay = isToday ? formattedDepartureTime : `${formattedLeaveDate} at ${formattedDepartureTime}`;
+        const returnDisplay = isToday ? formattedReturnTime : `${formattedLeaveDate} at ${formattedReturnTime}`;
         
         // Create leave request for approval
         const requestId = await db.createLeaveRequest(
@@ -1791,8 +1823,9 @@ app.view('intermediate_logout_modal', async ({ ack, body, client, view }) => {
             taskEscalation, 
             {
                 plannedDuration: durationMinutes,
-                expectedReturnTime: formattedReturnTime,
-                departureTime: formattedDepartureTime
+                expectedReturnTime: returnDisplay,
+                departureTime: departureDisplay,
+                leaveDate: leaveDate
             }
         );
         
@@ -1804,7 +1837,7 @@ app.view('intermediate_logout_modal', async ({ ack, body, client, view }) => {
                     type: 'section',
                     text: {
                         type: 'mrkdwn',
-                        text: `🔄 *Leave Request - Intermediate Logout*\n\n👤 *Employee:* ${userName}\n🚪 *Departure:* ${formattedDepartureTime}\n🔙 *Expected Return:* ${formattedReturnTime}\n⏰ *Duration:* ${formattedDuration}\n📝 *Reason:* ${reason}\n\n🔄 *Task Escalation:*\n${taskEscalation}\n\n📋 <@${config.bot.leaveApprovalTag}> - Please review this leave request.`
+                        text: `🔄 *Leave Request - Intermediate Logout*\n\n👤 *Employee:* ${userName}\n${!isToday ? `📅 *Date:* ${formattedLeaveDate}\n` : ''}🚪 *Departure:* ${isToday ? formattedDepartureTime : `${formattedDepartureTime}`}\n🔙 *Expected Return:* ${isToday ? formattedReturnTime : `${formattedReturnTime}`}\n⏰ *Duration:* ${formattedDuration}\n📝 *Reason:* ${reason}\n\n🔄 *Task Escalation:*\n${taskEscalation}\n\n📋 <@${config.bot.leaveApprovalTag}> - Please review this leave request.`
                     }
                 },
                 {
@@ -1835,7 +1868,7 @@ app.view('intermediate_logout_modal', async ({ ack, body, client, view }) => {
         });
         
         // Send success message to user (private)
-        let successMessage = `✅ *Leave request submitted successfully!*\n\n🚪 Departure: ${formattedDepartureTime}\n🔙 Expected return: ${formattedReturnTime}\n⏰ Duration: ${formattedDuration}\n📝 Reason: ${reason}`;
+        let successMessage = `✅ *Leave request submitted successfully!*\n\n${!isToday ? `📅 Date: ${formattedLeaveDate}\n` : ''}🚪 Departure: ${departureDisplay}\n🔙 Expected return: ${returnDisplay}\n⏰ Duration: ${formattedDuration}\n📝 Reason: ${reason}`;
         
         if (taskEscalation) {
             successMessage += `\n🔄 Task Escalation: ${taskEscalation}`;
@@ -2545,16 +2578,22 @@ app.action('approve_leave', async ({ ack, body, client, action }) => {
         // For intermediate logout, handle immediate vs scheduled departure
         if (leaveRequest.leave_type === 'intermediate') {
             const now = new Date();
-            const today = now.toDateString();
+            const today = now.toISOString().split('T')[0];
             const departureTime = leaveRequest.departure_time;
+            const leaveDate = leaveRequest.leave_date || today; // Default to today for legacy requests
             
-            // Check if departure is immediate (within next 15 minutes) or scheduled
+            // Check if departure is immediate (today and within next 15 minutes) or scheduled
             let isImmediate = false;
-            if (departureTime) {
-                const departureDateTime = new Date(today + ' ' + Utils.parseTimeString(departureTime));
+            let isFutureDate = leaveDate !== today;
+            
+            if (!isFutureDate && departureTime) {
+                // Same day - check time proximity
+                const timeOnly = departureTime.includes(' at ') ? 
+                    departureTime.split(' at ')[1] : departureTime;
+                const departureDateTime = new Date(today + 'T' + Utils.parseTimeString(timeOnly));
                 const timeDiff = departureDateTime - now;
                 isImmediate = timeDiff <= 15 * 60 * 1000; // 15 minutes or less
-            } else {
+            } else if (!departureTime) {
                 isImmediate = true; // Legacy format, start immediately
             }
             
@@ -2582,17 +2621,21 @@ app.action('approve_leave', async ({ ack, body, client, action }) => {
                 // Notify user
                 await client.chat.postMessage({
                     channel: leaveRequest.user_id,
-                    text: `✅ *Leave Approved!*\n\nYour intermediate logout request has been approved by ${approverName}.\n🚪 Departure: ${departureTime || 'Now'}\n🔙 Expected return: ${leaveRequest.expected_return_time}\n⏰ Duration: ${Utils.formatDuration(leaveRequest.planned_duration)}\n\nYour leave has started automatically. Use \`/return\` when you're back!`
+                    text: `✅ *Leave Approved!*\n\nYour intermediate logout request has been approved by ${approverName}.\n🚪 Departure: ${leaveRequest.departure_time || 'Now'}\n🔙 Expected return: ${leaveRequest.expected_return_time}\n⏰ Duration: ${Utils.formatDuration(leaveRequest.planned_duration)}\n\nYour leave has started automatically. Use \`/return\` when you're back!`
                 });
             } else {
-                // Scheduled departure - just notify user, don't start session yet
+                // Scheduled departure (future date or future time) - just notify user, don't start session yet
+                const scheduleText = isFutureDate ? 
+                    `on ${Utils.formatDate(leaveDate)} at ${departureTime.includes(' at ') ? departureTime.split(' at ')[1] : departureTime}` :
+                    `at ${departureTime}`;
+                
                 await client.chat.postMessage({
                     channel: leaveRequest.user_id,
-                    text: `✅ *Leave Approved!*\n\nYour intermediate logout request has been approved by ${approverName}.\n🚪 Scheduled departure: ${departureTime}\n🔙 Expected return: ${leaveRequest.expected_return_time}\n⏰ Duration: ${Utils.formatDuration(leaveRequest.planned_duration)}\n\n⏰ Your leave session will start automatically at ${departureTime}. You'll receive a notification then.`
+                    text: `✅ *Leave Approved!*\n\nYour intermediate logout request has been approved by ${approverName}.\n🚪 Scheduled departure: ${leaveRequest.departure_time}\n🔙 Expected return: ${leaveRequest.expected_return_time}\n⏰ Duration: ${Utils.formatDuration(leaveRequest.planned_duration)}\n\n⏰ Your leave session will start automatically ${scheduleText}. You'll receive a notification then.`
                 });
                 
                 // TODO: Implement scheduled departure logic (cron job or delayed task)
-                console.log(`📅 Scheduled departure for ${leaveRequest.user_name} at ${departureTime}`);
+                console.log(`📅 Scheduled departure for ${leaveRequest.user_name} ${scheduleText}`);
             }
         } else {
             // For planned leave, post to transparency channel and notify user
