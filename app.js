@@ -107,18 +107,37 @@ expressApp.get('/', (req, res) => {
 expressApp.get('/ping', (req, res) => {
     res.status(200).json({ 
         status: 'alive', 
-        timestamp: new Date().toISOString(),
+        timestamp: Utils.getCurrentIST(),
         uptime: process.uptime(),
+        memory: process.memoryUsage(),
+        lastActivity: lastActivityTime,
+        socketConnected: socketConnected,
+        service: 'attendance-bot-ping',
         message: 'Attendance bot is running!' 
     });
 });
 
 expressApp.get('/health', (req, res) => {
-    res.status(200).json({ 
+    const memUsage = process.memoryUsage();
+    const healthData = {
         status: 'healthy',
-        service: 'attendance-bot',
-        timestamp: new Date().toISOString()
-    });
+        timestamp: Utils.getCurrentIST(),
+        uptime: Math.floor(process.uptime()),
+        uptimeFormatted: `${Math.floor(process.uptime() / 3600)}h ${Math.floor((process.uptime() % 3600) / 60)}m`,
+        memory: {
+            used: `${Math.round(memUsage.heapUsed / 1024 / 1024)}MB`,
+            total: `${Math.round(memUsage.heapTotal / 1024 / 1024)}MB`,
+            external: `${Math.round(memUsage.external / 1024 / 1024)}MB`
+        },
+        socketConnection: socketConnected ? 'connected' : 'disconnected',
+        lastActivity: lastActivityTime,
+        service: 'attendance-bot-health',
+        version: '2.1.0',
+        keepalive: RENDER_URL ? 'ultra-aggressive' : 'disabled'
+    };
+    
+    console.log(`📊 Health check requested at ${Utils.getCurrentIST()} - Uptime: ${healthData.uptimeFormatted}`);
+    res.status(200).json(healthData);
 });
 
 // Start Express server
@@ -130,25 +149,57 @@ expressApp.listen(PORT, () => {
 const RENDER_URL = process.env.RENDER_URL; // We'll add this as env var
 
 if (RENDER_URL) {
-    // Main keepalive - every 3 minutes (more aggressive)
-    cron.schedule('*/3 * * * *', async () => {
-        try {
-            await axios.get(`${RENDER_URL}/ping`, { timeout: 5000 });
-            console.log('🔄 Keepalive ping successful');
-        } catch (error) {
-            console.log('⚠️ Keepalive ping failed (normal if service is spinning up)');
+    // Ultra-aggressive keepalive for Render free tier - every 90 seconds
+    cron.schedule('*/1 * * * *', async () => {
+        const seconds = new Date().getSeconds();
+        if (seconds < 30) { // Run at :00 and :30 of each minute (every 90 seconds average)
+            try {
+                const response = await axios.get(`${RENDER_URL}/ping`, { 
+                    timeout: 10000,
+                    headers: {
+                        'User-Agent': 'AttendanceBot-KeepAlive/1.0',
+                        'X-Keep-Alive': 'true'
+                    }
+                });
+                console.log(`🔄 Keepalive ping successful (${response.status}) at ${Utils.getCurrentIST()}`);
+            } catch (error) {
+                console.log(`⚠️ Keepalive ping failed at ${Utils.getCurrentIST()}: ${error.message}`);
+                // Try alternative endpoint on failure
+                try {
+                    await axios.get(`${RENDER_URL}/health`, { timeout: 5000 });
+                    console.log('🔄 Keepalive fallback successful');
+                } catch (fallbackError) {
+                    console.log('⚠️ Keepalive fallback also failed');
+                }
+            }
         }
     });
     
-    // Additional lightweight ping every 2 minutes during business hours (9 AM - 6 PM IST)
-    cron.schedule('*/2 9-18 * * 1-5', async () => {
-        try {
-            await axios.get(`${RENDER_URL}/health`, { timeout: 3000 });
-            console.log('🔄 Business hours ping successful');
-        } catch (error) {
-            console.log('⚠️ Business hours ping failed');
+    // Business hours ultra-aggressive keepalive - every minute during work hours (IST 8 AM - 9 PM)
+    cron.schedule('* * * * *', async () => {
+        const now = new Date();
+        const istTime = new Date(now.getTime() + (5.5 * 60 * 60 * 1000)); // Proper IST conversion
+        const istHour = istTime.getHours();
+        
+        if (istHour >= 8 && istHour < 21) { // 8 AM - 9 PM IST (extended business hours)
+            try {
+                const response = await axios.get(`${RENDER_URL}/health`, { 
+                    timeout: 8000,
+                    headers: {
+                        'User-Agent': 'AttendanceBot-BusinessHours/1.0',
+                        'X-Business-Hours': 'true'
+                    }
+                });
+                console.log(`🔄 Business hours ping successful (${response.status}) at ${Utils.getCurrentIST()}`);
+            } catch (error) {
+                console.log(`⚠️ Business hours ping failed at ${Utils.getCurrentIST()}: ${error.message}`);
+            }
         }
     });
+    
+    console.log('🚀 Ultra-aggressive keepalive enabled for Render free tier');
+} else {
+    console.log('⚠️ RENDER_URL not set - keepalive disabled. Service may spin down on free tier.');
 }
 
 // Track Socket Mode connection status
@@ -4039,7 +4090,9 @@ async function startApp(retryCount = 0) {
         console.log(`  • HR tag: ${config.bot.hrTag} (User ID required)`);
         console.log(`  • Admin notifications: ${config.notifications.notifyChannel ? '✅ ' + config.notifications.notifyChannel : '❌ Disabled'}`);
         console.log(`  • Admin password set: ${config.bot.adminPassword ? '✅' : '❌'}`);
-        console.log(`  • Keepalive: ${RENDER_URL ? '✅ Enabled' : '❌ Disabled (add RENDER_URL env var)'}`);
+        console.log(`  • Keepalive: ${RENDER_URL ? '✅ Ultra-aggressive (every 90s + business hours)' : '❌ Disabled (add RENDER_URL env var)'}`);
+        console.log(`  • Service health: ${RENDER_URL}/health`);
+        console.log(`  • Service ping: ${RENDER_URL}/ping`);
         console.log('🚀 Available commands:');
         console.log('  /late_login_early_logout - Request early logout or late login (requires approval)');
         console.log('  /intermediate_logout <duration> <reason> - Start intermediate logout (requires approval)');
