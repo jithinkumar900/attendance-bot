@@ -128,6 +128,7 @@ expressApp.listen(PORT, () => {
 
 // Multi-layer keepalive and monitoring system to prevent service spin-down
 const RENDER_URL = process.env.RENDER_URL; // We'll add this as env var
+const RENDER_DEPLOY_HOOK = process.env.RENDER_DEPLOY_HOOK; // Deploy hook URL for self-deployment
 
 if (RENDER_URL) {
     let lastPingTime = 0;
@@ -555,12 +556,144 @@ async function attemptAggressiveRecovery() {
         
     } catch (error) {
         console.log(`❌ Aggressive recovery failed: ${error.message}`);
-        console.log('🚨 CRITICAL: Manual intervention required - service may need restart');
+        
+        // If aggressive recovery fails, try self-deployment as last resort
+        if (RENDER_DEPLOY_HOOK) {
+            console.log('🚀 Attempting self-deployment as last resort...');
+            return await attemptSelfDeployment('aggressive_recovery_failed');
+        } else {
+            console.log('🚨 CRITICAL: Manual intervention required - service may need restart');
+            console.log('💡 Add RENDER_DEPLOY_HOOK env var to enable self-deployment capability');
+            return false;
+        }
+    }
+}
+
+// Self-deployment functionality - ultimate failsafe
+async function attemptSelfDeployment(reason = 'unknown') {
+    const timestamp = Utils.getCurrentIST();
+    console.log(`🚀 Initiating self-deployment at ${timestamp}`);
+    console.log(`🔍 Deployment reason: ${reason}`);
+    
+    if (!RENDER_DEPLOY_HOOK) {
+        console.log('❌ RENDER_DEPLOY_HOOK not configured, cannot self-deploy');
+        return false;
+    }
+    
+    try {
+        // First, save critical state before deployment
+        await preserveCriticalState();
+        
+        // Trigger deployment via Render Deploy Hook
+        const response = await axios.post(RENDER_DEPLOY_HOOK, {}, {
+            timeout: 30000,
+            headers: {
+                'User-Agent': 'Slack-Bot-SelfDeploy/1.0',
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (response.status === 200 || response.status === 201) {
+            const deployId = response.data?.deploy?.id || 'unknown';
+            console.log(`✅ Self-deployment triggered successfully at ${timestamp}`);
+            console.log(`📋 Deploy ID: ${deployId}`);
+            
+            // Notify admin about self-deployment
+            await notifyAdminOfSelfDeployment(reason, deployId, timestamp);
+            
+            // Give the deployment some time to start
+            console.log('⏳ Waiting for deployment to begin...');
+            setTimeout(() => {
+                console.log('🔄 Self-deployment initiated, service will restart shortly');
+                // The service will be killed and restarted by Render
+            }, 5000);
+            
+            return true;
+        } else {
+            console.log(`❌ Deployment hook returned unexpected status: ${response.status}`);
+            return false;
+        }
+        
+    } catch (error) {
+        console.log(`❌ Self-deployment failed at ${timestamp}: ${error.message}`);
+        
+        if (error.response) {
+            console.log(`📊 Response status: ${error.response.status}`);
+            console.log(`📋 Response data: ${JSON.stringify(error.response.data)}`);
+        }
+        
         return false;
     }
 }
 
-// Enhanced monitoring with self-healing triggers
+async function preserveCriticalState() {
+    try {
+        // Log current state for recovery after deployment
+        const timestamp = Utils.getCurrentIST();
+        console.log(`💾 Preserving critical state before deployment at ${timestamp}`);
+        
+        // Count pending requests
+        const pendingCount = await new Promise((resolve, reject) => {
+            db.db.get("SELECT COUNT(*) as count FROM leave_requests WHERE status = 'pending'", (err, row) => {
+                if (err) reject(err);
+                else resolve(row.count);
+            });
+        });
+        
+        // Count active sessions
+        const activeCount = await new Promise((resolve, reject) => {
+            db.db.get("SELECT COUNT(*) as count FROM leave_sessions WHERE end_time IS NULL", (err, row) => {
+                if (err) reject(err);
+                else resolve(row.count);
+            });
+        });
+        
+        console.log(`📊 State preserved: ${pendingCount} pending requests, ${activeCount} active sessions`);
+        console.log(`📝 Note: All data persists in SQLite database through deployment`);
+        
+        return true;
+    } catch (error) {
+        console.log(`⚠️ State preservation warning: ${error.message}`);
+        return false; // Don't block deployment for this
+    }
+}
+
+async function notifyAdminOfSelfDeployment(reason, deployId, timestamp) {
+    try {
+        if (!config.bot.leaveApprovalChannel) return;
+        
+        const message = `🚀 *Self-Deployment Triggered*\n\n⚠️ The attendance bot has automatically triggered a deployment to recover from critical issues.\n\n🔍 *Reason:* ${reason}\n📋 *Deploy ID:* ${deployId}\n⏰ *Timestamp:* ${timestamp}\n\n✅ *Data Safety:* All leave requests and sessions are preserved in the database.\n\nThe service will restart shortly and resume normal operation.`;
+        
+        await app.client.chat.postMessage({
+            channel: config.bot.leaveApprovalChannel,
+            text: message,
+            blocks: [
+                {
+                    type: 'section',
+                    text: {
+                        type: 'mrkdwn',
+                        text: message
+                    }
+                },
+                {
+                    type: 'context',
+                    elements: [
+                        {
+                            type: 'mrkdwn',
+                            text: '🔧 This is an automated recovery action to maintain service reliability.'
+                        }
+                    ]
+                }
+            ]
+        });
+        
+        console.log('📢 Admin notification sent for self-deployment');
+    } catch (error) {
+        console.log(`⚠️ Failed to notify admin of self-deployment: ${error.message}`);
+    }
+}
+
+// Enhanced monitoring with self-healing triggers and self-deployment capability
 if (RENDER_URL) {
     // Monitor for self-healing triggers every 10 minutes
     cron.schedule('*/10 * * * *', async () => {
@@ -577,7 +710,44 @@ if (RENDER_URL) {
         // Monitor critical failure count
         if (criticalFailures >= 5) {
             console.log(`🚨 ${criticalFailures} critical failures detected, triggering self-healing...`);
-            await performSelfHealing('critical_failure_threshold');
+            const healingSuccess = await performSelfHealing('critical_failure_threshold');
+            
+            // If self-healing fails and we have too many critical failures, try self-deployment
+            if (!healingSuccess && criticalFailures >= 8 && RENDER_DEPLOY_HOOK) {
+                console.log(`🚀 Self-healing failed with ${criticalFailures} failures, attempting self-deployment...`);
+                await attemptSelfDeployment('self_healing_exhausted');
+            }
+        }
+    });
+    
+    // Ultimate failsafe monitor - checks for complete service unresponsiveness
+    cron.schedule('*/30 * * * *', async () => {
+        const now = new Date();
+        const timeSinceLastActivity = now - lastSlackActivity;
+        const timestamp = Utils.getCurrentIST();
+        
+        // If the service has been completely unresponsive for over 2 hours, trigger self-deployment
+        if (timeSinceLastActivity > 2 * 60 * 60 * 1000 && RENDER_DEPLOY_HOOK) {
+            console.log(`🚨 Service completely unresponsive for ${Math.round(timeSinceLastActivity / (60 * 60 * 1000))} hours`);
+            console.log(`🚀 Triggering emergency self-deployment at ${timestamp}`);
+            await attemptSelfDeployment('complete_unresponsiveness');
+        }
+        
+        // Also check if the service is running but completely broken (can't perform basic operations)
+        try {
+            await db.db.get("SELECT 1 as test", (err) => {
+                if (err) {
+                    console.log(`🚨 Database completely inaccessible, triggering emergency deployment at ${timestamp}`);
+                    if (RENDER_DEPLOY_HOOK) {
+                        attemptSelfDeployment('database_failure');
+                    }
+                }
+            });
+        } catch (error) {
+            console.log(`🚨 Critical database error detected: ${error.message}`);
+            if (RENDER_DEPLOY_HOOK) {
+                await attemptSelfDeployment('critical_database_error');
+            }
         }
     });
 }
@@ -4576,6 +4746,7 @@ async function startApp(retryCount = 0) {
         console.log(`  • Admin notifications: ${config.notifications.notifyChannel ? '✅ ' + config.notifications.notifyChannel : '❌ Disabled'}`);
         console.log(`  • Admin password set: ${config.bot.adminPassword ? '✅' : '❌'}`);
         console.log(`  • Keepalive: ${RENDER_URL ? '✅ Enabled (5-min intervals + health monitoring)' : '❌ Disabled (add RENDER_URL env var)'}`);
+        console.log(`  • Self-deployment: ${RENDER_DEPLOY_HOOK ? '✅ Enabled (ultimate failsafe)' : '⚠️ Disabled (add RENDER_DEPLOY_HOOK env var for auto-recovery)'}`);
         console.log('🚀 Available commands:');
         console.log('  /late_login_early_logout - Request early logout or late login (requires approval)');
         console.log('  /intermediate_logout <duration> <reason> - Start intermediate logout (requires approval)');
