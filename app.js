@@ -126,19 +126,20 @@ expressApp.listen(PORT, () => {
     console.log(`🌐 HTTP server running on port ${PORT}`);
 });
 
-// Self-ping every 10 minutes to prevent spin-down (reduced frequency to avoid rate limits)
+// Multi-layer keepalive and monitoring system to prevent service spin-down
 const RENDER_URL = process.env.RENDER_URL; // We'll add this as env var
 
 if (RENDER_URL) {
     let lastPingTime = 0;
     let failureCount = 0;
+    let lastActivityLog = 0;
     
-    // Single keepalive - every 10 minutes (less aggressive to avoid rate limits)
-    cron.schedule('*/10 * * * *', async () => {
+    // Primary keepalive - every 5 minutes (balanced approach)
+    cron.schedule('*/5 * * * *', async () => {
         const now = Date.now();
         
         // Skip if we just pinged recently (prevent duplicate pings)
-        if (now - lastPingTime < 8 * 60 * 1000) { // 8 minutes
+        if (now - lastPingTime < 4 * 60 * 1000) { // 4 minutes
             return;
         }
         
@@ -146,9 +147,10 @@ if (RENDER_URL) {
         
         try {
             const response = await axios.get(`${RENDER_URL}/ping`, { 
-                timeout: 10000,
+                timeout: 15000,
                 headers: {
-                    'User-Agent': 'Slack-Bot-Keepalive/1.0'
+                    'User-Agent': 'Slack-Bot-Keepalive/1.0',
+                    'Cache-Control': 'no-cache'
                 }
             });
             
@@ -156,44 +158,110 @@ if (RENDER_URL) {
             console.log(`🔄 Keepalive ping successful (${response.status}) at ${timestamp}`);
             failureCount = 0; // Reset failure count on success
             
+            // Log activity status every hour
+            if (now - lastActivityLog > 60 * 60 * 1000) {
+                console.log(`💓 Bot health check: Active and responsive at ${timestamp}`);
+                lastActivityLog = now;
+            }
+            
         } catch (error) {
             failureCount++;
             const timestamp = Utils.getCurrentIST();
             
             if (error.response && error.response.status === 429) {
-                console.log(`⚠️ Keepalive ping rate limited at ${timestamp} (will retry in 10 min)`);
+                console.log(`⚠️ Keepalive ping rate limited at ${timestamp} (will retry in 5 min)`);
                 return; // Don't try fallback on rate limit
             }
             
-            console.log(`⚠️ Keepalive ping failed at ${timestamp}: ${error.message}`);
+            console.log(`❌ Keepalive ping failed at ${timestamp}: ${error.message}`);
             
-            // Only try fallback if it's not a rate limit and we haven't failed too many times
+            // Try immediate fallback with different endpoint
             if (failureCount <= 3) {
                 try {
-                    await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
+                    await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
                     await axios.get(`${RENDER_URL}/health`, { 
-                        timeout: 8000,
+                        timeout: 10000,
                         headers: {
-                            'User-Agent': 'Slack-Bot-Fallback/1.0'
+                            'User-Agent': 'Slack-Bot-Fallback/1.0',
+                            'Cache-Control': 'no-cache'
                         }
                     });
-                    console.log('🔄 Keepalive fallback successful');
+                    console.log(`🔄 Keepalive fallback successful at ${timestamp}`);
                     failureCount = 0;
                 } catch (fallbackError) {
                     if (fallbackError.response && fallbackError.response.status === 429) {
-                        console.log('⚠️ Keepalive fallback also rate limited');
+                        console.log(`⚠️ Keepalive fallback also rate limited at ${timestamp}`);
                     } else {
-                        console.log('⚠️ Keepalive fallback also failed');
+                        console.log(`❌ Keepalive fallback also failed at ${timestamp}: ${fallbackError.message}`);
                     }
                 }
+            } else {
+                console.log(`🚨 Keepalive failed ${failureCount} times consecutively - service may be spinning down`);
             }
+        }
+    });
+    
+    // Additional aggressive keepalive during business hours (when users are most active)
+    cron.schedule('*/3 9-18 * * 1-5', async () => {
+        const now = Date.now();
+        
+        // Only ping if primary keepalive hasn't pinged recently
+        if (now - lastPingTime < 2.5 * 60 * 1000) { // 2.5 minutes
+            return;
+        }
+        
+        try {
+            const response = await axios.get(`${RENDER_URL}/health`, { 
+                timeout: 8000,
+                headers: {
+                    'User-Agent': 'Slack-Bot-BusinessHours/1.0',
+                    'Cache-Control': 'no-cache'
+                }
+            });
+            
+            lastPingTime = now;
+            const timestamp = Utils.getCurrentIST();
+            console.log(`🕘 Business hours ping successful (${response.status}) at ${timestamp}`);
+            
+        } catch (error) {
+            if (error.response && error.response.status !== 429) {
+                const timestamp = Utils.getCurrentIST();
+                console.log(`⚠️ Business hours ping failed at ${timestamp}: ${error.message}`);
+            }
+        }
+    });
+    
+    // Health monitoring - check if the service is responsive every 15 minutes
+    cron.schedule('*/15 * * * *', async () => {
+        try {
+            const startTime = Date.now();
+            const response = await axios.get(`${RENDER_URL}/ping`, { 
+                timeout: 5000,
+                headers: {
+                    'User-Agent': 'Slack-Bot-HealthCheck/1.0'
+                }
+            });
+            const responseTime = Date.now() - startTime;
+            const timestamp = Utils.getCurrentIST();
+            
+            if (responseTime > 3000) {
+                console.log(`🐌 Slow response detected: ${responseTime}ms at ${timestamp}`);
+            } else {
+                console.log(`✅ Health check passed: ${responseTime}ms response time at ${timestamp}`);
+            }
+            
+        } catch (error) {
+            const timestamp = Utils.getCurrentIST();
+            console.log(`🚨 Health check failed at ${timestamp}: ${error.message}`);
         }
     });
 }
 
-// Track Socket Mode connection status
+// Track Socket Mode connection status and bot health
 let socketConnected = false;
 let lastActivityTime = new Date();
+let lastSlackActivity = new Date();
+let botHealthy = true;
 
 // Monitor Socket Mode connection (simplified approach)
 // Note: Slack Bolt doesn't expose these events directly, so we'll track via activity
@@ -202,6 +270,72 @@ let connectionWarmed = false;
 // Update activity timestamp on any interaction
 function updateActivity() {
     lastActivityTime = new Date();
+    lastSlackActivity = new Date();
+    botHealthy = true;
+}
+
+// Bot health monitoring system
+if (RENDER_URL) {
+    // Monitor bot responsiveness every 20 minutes
+    cron.schedule('*/20 * * * *', async () => {
+        const now = new Date();
+        const timeSinceLastActivity = now - lastSlackActivity;
+        const timestamp = Utils.getCurrentIST();
+        
+        // If no Slack activity for over 30 minutes, the bot might be stuck
+        if (timeSinceLastActivity > 30 * 60 * 1000) {
+            console.log(`⚠️ Bot may be unresponsive - no Slack activity for ${Math.round(timeSinceLastActivity / 60000)} minutes at ${timestamp}`);
+            botHealthy = false;
+            
+            // Try to test the bot's Slack connection
+            try {
+                await app.client.auth.test();
+                console.log(`✅ Slack connection test passed at ${timestamp}`);
+                botHealthy = true;
+                lastSlackActivity = now;
+            } catch (error) {
+                console.log(`❌ Slack connection test failed at ${timestamp}: ${error.message}`);
+                
+                // If connection test fails, try to restart the Socket Mode connection
+                try {
+                    console.log(`🔄 Attempting to reconnect Socket Mode at ${timestamp}...`);
+                    if (app.receiver && app.receiver.client) {
+                        await app.receiver.client.disconnect();
+                        await new Promise(resolve => setTimeout(resolve, 3000));
+                        await app.receiver.client.connect();
+                        console.log(`✅ Socket Mode reconnection successful at ${timestamp}`);
+                        botHealthy = true;
+                        lastSlackActivity = now;
+                    }
+                } catch (reconnectError) {
+                    console.log(`❌ Socket Mode reconnection failed at ${timestamp}: ${reconnectError.message}`);
+                }
+            }
+        } else {
+            console.log(`💓 Bot health: Active (last activity ${Math.round(timeSinceLastActivity / 60000)} minutes ago) at ${timestamp}`);
+        }
+    });
+    
+    // Aggressive monitoring during business hours to catch issues early
+    cron.schedule('*/7 9-18 * * 1-5', async () => {
+        const now = new Date();
+        const timeSinceLastActivity = now - lastSlackActivity;
+        const timestamp = Utils.getCurrentIST();
+        
+        // During business hours, check for issues more frequently
+        if (timeSinceLastActivity > 15 * 60 * 1000) {
+            console.log(`🔍 Business hours check: No activity for ${Math.round(timeSinceLastActivity / 60000)} minutes at ${timestamp}`);
+            
+            // Quick health test
+            try {
+                await app.client.auth.test();
+                console.log(`✅ Business hours health check passed at ${timestamp}`);
+                lastSlackActivity = now;
+            } catch (error) {
+                console.log(`⚠️ Business hours health check failed at ${timestamp}: ${error.message}`);
+            }
+        }
+    });
 }
 
 // Warmup function to ensure service is ready
@@ -308,6 +442,7 @@ cron.schedule('* * * * *', async () => {
 // Handle /logout command (unified early logout and late login)
 app.command('/late_login_early_logout', async ({ command, ack, client }) => {
     await ack();
+    updateActivity();
 
     try {
         // Open selection modal to choose between early logout or late login
@@ -577,8 +712,6 @@ app.action('select_late_login', async ({ ack, body, client }) => {
 // Start intermediate logout - Interactive Modal
 app.command('/intermediate_logout', async ({ command, ack, client }) => {
     await ack();
-    
-    // Update activity and ensure service is warmed up
     updateActivity();
     await warmupService();
     
@@ -4079,7 +4212,7 @@ async function startApp(retryCount = 0) {
         console.log(`  • HR tag: ${config.bot.hrTag} (User ID required)`);
         console.log(`  • Admin notifications: ${config.notifications.notifyChannel ? '✅ ' + config.notifications.notifyChannel : '❌ Disabled'}`);
         console.log(`  • Admin password set: ${config.bot.adminPassword ? '✅' : '❌'}`);
-        console.log(`  • Keepalive: ${RENDER_URL ? '✅ Enabled (10-minute intervals)' : '❌ Disabled (add RENDER_URL env var)'}`);
+        console.log(`  • Keepalive: ${RENDER_URL ? '✅ Enabled (5-min intervals + health monitoring)' : '❌ Disabled (add RENDER_URL env var)'}`);
         console.log('🚀 Available commands:');
         console.log('  /late_login_early_logout - Request early logout or late login (requires approval)');
         console.log('  /intermediate_logout <duration> <reason> - Start intermediate logout (requires approval)');
