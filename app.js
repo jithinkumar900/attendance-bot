@@ -104,21 +104,140 @@ expressApp.get('/', (req, res) => {
     });
 });
 
-expressApp.get('/ping', (req, res) => {
-    res.status(200).json({ 
-        status: 'alive', 
-        timestamp: new Date().toISOString(),
-        uptime: process.uptime(),
-        message: 'Attendance bot is running!' 
-    });
+// Enhanced ping endpoint with real functionality checks
+expressApp.get('/ping', async (req, res) => {
+    try {
+        const timestamp = new Date().toISOString();
+        const uptime = process.uptime();
+        
+        // Perform basic health checks
+        const healthChecks = {
+            express: true, // If we're here, Express is working
+            database: false,
+            slack: false,
+            memory: false
+        };
+        
+        // Check database connectivity
+        try {
+            await new Promise((resolve, reject) => {
+                db.db.get("SELECT 1 as test", (err, row) => {
+                    if (err) reject(err);
+                    else resolve(row);
+                });
+            });
+            healthChecks.database = true;
+        } catch (error) {
+            console.log(`⚠️ Database health check failed: ${error.message}`);
+        }
+        
+        // Check Slack API connectivity  
+        try {
+            await app.client.auth.test();
+            healthChecks.slack = true;
+        } catch (error) {
+            console.log(`⚠️ Slack health check failed: ${error.message}`);
+        }
+        
+        // Check memory usage (fail if over 90% of available memory)
+        const memUsage = process.memoryUsage();
+        const memPercentage = (memUsage.heapUsed / memUsage.heapTotal) * 100;
+        healthChecks.memory = memPercentage < 90;
+        
+        // Determine overall health status
+        const criticalChecks = ['database', 'slack'];
+        const isCriticallyHealthy = criticalChecks.every(check => healthChecks[check]);
+        const allHealthy = Object.values(healthChecks).every(status => status);
+        
+        // Update global health indicators
+        if (isCriticallyHealthy) {
+            lastSlackActivity = new Date();
+            botHealthy = true;
+            criticalFailures = Math.max(0, criticalFailures - 1); // Reduce failure count on success
+        } else {
+            botHealthy = false;
+            criticalFailures++;
+        }
+        
+        // Return appropriate HTTP status
+        if (!isCriticallyHealthy) {
+            return res.status(503).json({
+                status: 'unhealthy',
+                timestamp,
+                uptime,
+                message: 'Critical systems failing',
+                checks: healthChecks,
+                memory_usage_percent: Math.round(memPercentage),
+                critical_failures: criticalFailures
+            });
+        } else if (!allHealthy) {
+            return res.status(200).json({
+                status: 'degraded',
+                timestamp,
+                uptime,
+                message: 'Some non-critical systems failing',
+                checks: healthChecks,
+                memory_usage_percent: Math.round(memPercentage),
+                critical_failures: criticalFailures
+            });
+        } else {
+            return res.status(200).json({
+                status: 'healthy',
+                timestamp,
+                uptime,
+                message: 'All systems operational',
+                checks: healthChecks,
+                memory_usage_percent: Math.round(memPercentage),
+                critical_failures: criticalFailures
+            });
+        }
+        
+    } catch (error) {
+        console.log(`❌ Health check error: ${error.message}`);
+        return res.status(500).json({
+            status: 'error',
+            timestamp: new Date().toISOString(),
+            message: 'Health check failed',
+            error: error.message
+        });
+    }
 });
 
-expressApp.get('/health', (req, res) => {
-    res.status(200).json({ 
-        status: 'healthy',
-        service: 'attendance-bot',
-        timestamp: new Date().toISOString()
-    });
+// Lightweight health endpoint for basic uptime monitoring
+expressApp.get('/health', async (req, res) => {
+    try {
+        const timestamp = new Date().toISOString();
+        
+        // Quick database check
+        const dbHealthy = await new Promise((resolve) => {
+            db.db.get("SELECT 1 as test", (err) => {
+                resolve(!err);
+            });
+        });
+        
+        if (dbHealthy) {
+            res.status(200).json({ 
+                status: 'healthy',
+                service: 'attendance-bot',
+                timestamp,
+                database: 'connected'
+            });
+        } else {
+            res.status(503).json({
+                status: 'unhealthy',
+                service: 'attendance-bot', 
+                timestamp,
+                database: 'disconnected'
+            });
+        }
+    } catch (error) {
+        res.status(500).json({
+            status: 'error',
+            service: 'attendance-bot',
+            timestamp: new Date().toISOString(),
+            error: error.message
+        });
+    }
 });
 
 // Start Express server

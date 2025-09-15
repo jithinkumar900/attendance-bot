@@ -32,7 +32,9 @@ After the deployment completes, check the startup logs for:
 
 ## 🚨 Self-Deployment Triggers
 
-The bot will automatically trigger its own deployment when:
+⚠️ **IMPORTANT LIMITATION**: Self-deployment only works when the service is **running but broken**. If Render completely spins down the service, the bot cannot execute this logic.
+
+The bot will automatically trigger its own deployment when the **service is running** but experiencing:
 
 ### 1. **Aggressive Recovery Fails**
 - When all self-healing attempts fail
@@ -221,4 +223,16 @@ This creates an **virtually unbreakable** service that can recover from any fail
 3. **Monitor the startup logs** for the "✅ Self-deployment: Enabled" message
 4. **Sleep well** knowing your bot can handle any failure automatically! 😴
 
-Your attendance bot is now **fully autonomous** and **failure-resistant**! 🛡️
+## ⚠️ **For Complete Spin-Down Recovery**
+
+**Self-deployment won't work if the entire service is offline.** For true 24/7 recovery, you need **external monitoring**:
+
+### **Recommended: UptimeRobot + Deploy Hook**
+1. **Create UptimeRobot account**: https://uptimerobot.com
+2. **Monitor your service**: `https://attendance-bot-1dr6.onrender.com/ping`
+3. **Add webhook alert**: Point to your deploy hook when service is down
+4. **Result**: Automatic deployment trigger when service completely spins down
+
+See `external-recovery-solutions.md` for complete setup instructions.
+
+Your attendance bot is now **failure-resistant** for running issues, but needs external monitoring for complete spin-down scenarios! 🛡️
