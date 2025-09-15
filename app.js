@@ -193,10 +193,12 @@ if (RENDER_URL) {
                         console.log(`⚠️ Keepalive fallback also rate limited at ${timestamp}`);
                     } else {
                         console.log(`❌ Keepalive fallback also failed at ${timestamp}: ${fallbackError.message}`);
+                        criticalFailures++;
                     }
                 }
             } else {
                 console.log(`🚨 Keepalive failed ${failureCount} times consecutively - service may be spinning down`);
+                criticalFailures += 2; // Increase critical failure count for consecutive failures
             }
         }
     });
@@ -336,6 +338,364 @@ if (RENDER_URL) {
             }
         }
     });
+}
+
+// Self-healing and data preservation system
+let healingAttempts = 0;
+let lastHealingTime = 0;
+let criticalFailures = 0;
+const MAX_HEALING_ATTEMPTS = 3;
+const HEALING_COOLDOWN = 15 * 60 * 1000; // 15 minutes
+
+async function performSelfHealing(reason = 'unknown') {
+    const now = Date.now();
+    const timestamp = Utils.getCurrentIST();
+    
+    // Prevent excessive healing attempts
+    if (now - lastHealingTime < HEALING_COOLDOWN) {
+        console.log(`🚫 Self-healing on cooldown, skipping attempt at ${timestamp}`);
+        return false;
+    }
+    
+    if (healingAttempts >= MAX_HEALING_ATTEMPTS) {
+        console.log(`🚨 Max healing attempts (${MAX_HEALING_ATTEMPTS}) reached, manual intervention required at ${timestamp}`);
+        return false;
+    }
+    
+    healingAttempts++;
+    lastHealingTime = now;
+    
+    console.log(`🔧 Starting self-healing attempt ${healingAttempts}/${MAX_HEALING_ATTEMPTS} at ${timestamp}`);
+    console.log(`🔍 Healing reason: ${reason}`);
+    
+    try {
+        // Step 1: Verify database integrity and preserve data
+        console.log('📊 Checking database integrity...');
+        const dbHealthy = await verifyDatabaseIntegrity();
+        if (!dbHealthy) {
+            console.log('❌ Database integrity check failed');
+            return false;
+        }
+        
+        // Step 2: Test basic Slack connectivity
+        console.log('🔌 Testing Slack connectivity...');
+        await app.client.auth.test();
+        console.log('✅ Slack auth test passed');
+        
+        // Step 3: Reconnect Socket Mode
+        console.log('🔄 Reconnecting Socket Mode...');
+        if (app.receiver && app.receiver.client) {
+            try {
+                await app.receiver.client.disconnect();
+                await new Promise(resolve => setTimeout(resolve, 3000));
+                await app.receiver.client.connect();
+                console.log('✅ Socket Mode reconnected');
+            } catch (socketError) {
+                console.log(`⚠️ Socket Mode reconnection failed: ${socketError.message}`);
+                // Continue anyway, auth test passed
+            }
+        }
+        
+        // Step 4: Verify service endpoints are responding
+        if (RENDER_URL) {
+            console.log('🌐 Testing service endpoints...');
+            await axios.get(`${RENDER_URL}/ping`, { timeout: 10000 });
+            await axios.get(`${RENDER_URL}/health`, { timeout: 10000 });
+            console.log('✅ Service endpoints responding');
+        }
+        
+        // Step 5: Recover any lost state
+        console.log('🔄 Recovering application state...');
+        await recoverApplicationState();
+        
+        // Step 6: Reset health indicators
+        lastSlackActivity = new Date();
+        botHealthy = true;
+        criticalFailures = 0;
+        
+        console.log(`🎉 Self-healing completed successfully at ${timestamp}`);
+        
+        // Reset attempts counter on successful healing
+        setTimeout(() => {
+            healingAttempts = Math.max(0, healingAttempts - 1);
+            console.log(`🔄 Healing attempt counter reduced to ${healingAttempts}`);
+        }, 30 * 60 * 1000); // Reduce counter after 30 minutes
+        
+        return true;
+        
+    } catch (error) {
+        console.log(`❌ Self-healing failed at ${timestamp}: ${error.message}`);
+        criticalFailures++;
+        
+        // If multiple critical failures, try more aggressive recovery
+        if (criticalFailures >= 3) {
+            console.log(`🚨 Multiple critical failures detected, attempting aggressive recovery...`);
+            await attemptAggressiveRecovery();
+        }
+        
+        return false;
+    }
+}
+
+async function verifyDatabaseIntegrity() {
+    try {
+        // Test basic database operations
+        await new Promise((resolve, reject) => {
+            db.db.get("SELECT COUNT(*) as count FROM users", (err, row) => {
+                if (err) reject(err);
+                else resolve(row);
+            });
+        });
+        
+        await new Promise((resolve, reject) => {
+            db.db.get("SELECT COUNT(*) as count FROM leave_requests WHERE status = 'pending'", (err, row) => {
+                if (err) reject(err);
+                else {
+                    console.log(`📋 Found ${row.count} pending leave requests in database`);
+                    resolve(row);
+                }
+            });
+        });
+        
+        console.log('✅ Database integrity verified');
+        return true;
+    } catch (error) {
+        console.log(`❌ Database integrity check failed: ${error.message}`);
+        return false;
+    }
+}
+
+async function recoverApplicationState() {
+    try {
+        // Check for any pending leave requests that need attention
+        const pendingRequests = await new Promise((resolve, reject) => {
+            db.db.all(
+                `SELECT lr.*, u.name as user_name 
+                 FROM leave_requests lr 
+                 JOIN users u ON lr.user_id = u.id 
+                 WHERE lr.status = 'pending' 
+                 ORDER BY lr.requested_at DESC`,
+                (err, rows) => {
+                    if (err) reject(err);
+                    else resolve(rows || []);
+                }
+            );
+        });
+        
+        if (pendingRequests.length > 0) {
+            console.log(`🔄 Recovered ${pendingRequests.length} pending leave requests`);
+            
+            // Log the recovered requests for admin awareness
+            for (const request of pendingRequests.slice(0, 5)) { // Log first 5
+                console.log(`📋 Pending: ${request.user_name} - ${request.leave_type} leave requested at ${request.requested_at}`);
+            }
+        }
+        
+        // Check for active leave sessions that might need monitoring
+        const activeSessions = await new Promise((resolve, reject) => {
+            db.db.all(
+                `SELECT ls.*, u.name as user_name 
+                 FROM leave_sessions ls 
+                 JOIN users u ON ls.user_id = u.id 
+                 WHERE ls.end_time IS NULL`,
+                (err, rows) => {
+                    if (err) reject(err);
+                    else resolve(rows || []);
+                }
+            );
+        });
+        
+        if (activeSessions.length > 0) {
+            console.log(`🔄 Recovered ${activeSessions.length} active leave sessions`);
+            
+            // Check if any sessions have exceeded time limits
+            for (const session of activeSessions) {
+                const duration = Math.round((new Date() - new Date(session.start_time)) / (1000 * 60));
+                if (duration > config.bot.maxIntermediateHours * 60) {
+                    console.log(`⚠️ Found overtime session: ${session.user_name} - ${duration} minutes`);
+                }
+            }
+        }
+        
+        console.log('✅ Application state recovered');
+        return true;
+    } catch (error) {
+        console.log(`❌ State recovery failed: ${error.message}`);
+        return false;
+    }
+}
+
+async function attemptAggressiveRecovery() {
+    console.log('🚨 Attempting aggressive recovery...');
+    
+    try {
+        // Force restart the entire app (simulates service restart)
+        console.log('🔄 Forcing application restart...');
+        
+        // Close database connections safely
+        if (db && db.db) {
+            await new Promise((resolve) => {
+                db.db.close((err) => {
+                    if (err) console.log('Warning: Database close error:', err.message);
+                    resolve();
+                });
+            });
+        }
+        
+        // Reinitialize database
+        console.log('🗄️ Reinitializing database...');
+        global.db = new Database();
+        
+        // Restart the app
+        console.log('⚡ Restarting Slack app...');
+        await app.start();
+        
+        console.log('🎉 Aggressive recovery completed');
+        return true;
+        
+    } catch (error) {
+        console.log(`❌ Aggressive recovery failed: ${error.message}`);
+        console.log('🚨 CRITICAL: Manual intervention required - service may need restart');
+        return false;
+    }
+}
+
+// Enhanced monitoring with self-healing triggers
+if (RENDER_URL) {
+    // Monitor for self-healing triggers every 10 minutes
+    cron.schedule('*/10 * * * *', async () => {
+        const now = new Date();
+        const timeSinceLastActivity = now - lastSlackActivity;
+        const timestamp = Utils.getCurrentIST();
+        
+        // Trigger self-healing if bot has been unresponsive for too long
+        if (timeSinceLastActivity > 45 * 60 * 1000 && botHealthy === false) {
+            console.log(`🚨 Bot unresponsive for ${Math.round(timeSinceLastActivity / 60000)} minutes, triggering self-healing...`);
+            await performSelfHealing('prolonged_unresponsiveness');
+        }
+        
+        // Monitor critical failure count
+        if (criticalFailures >= 5) {
+            console.log(`🚨 ${criticalFailures} critical failures detected, triggering self-healing...`);
+            await performSelfHealing('critical_failure_threshold');
+        }
+    });
+}
+
+// Startup data recovery and health verification
+async function performStartupRecovery() {
+    const timestamp = Utils.getCurrentIST();
+    console.log(`🔄 Starting startup recovery process at ${timestamp}...`);
+    
+    try {
+        // Verify database integrity
+        await verifyDatabaseIntegrity();
+        
+        // Recover application state
+        await recoverApplicationState();
+        
+        // Test Slack connectivity
+        await app.client.auth.test();
+        console.log('✅ Slack connectivity verified');
+        
+        // Initialize health indicators
+        lastSlackActivity = new Date();
+        botHealthy = true;
+        healingAttempts = 0;
+        criticalFailures = 0;
+        
+        // Check for any urgent issues that need immediate attention
+        await checkForUrgentIssues();
+        
+        console.log(`✅ Startup recovery completed successfully at ${timestamp}`);
+        
+    } catch (error) {
+        console.log(`⚠️ Startup recovery encountered issues at ${timestamp}: ${error.message}`);
+        // Don't fail startup, but log for monitoring
+    }
+}
+
+async function checkForUrgentIssues() {
+    try {
+        // Check for leave sessions that exceeded time limits during downtime
+        const overtimeSessions = await new Promise((resolve, reject) => {
+            db.db.all(
+                `SELECT ls.*, u.name as user_name 
+                 FROM leave_sessions ls 
+                 JOIN users u ON ls.user_id = u.id 
+                 WHERE ls.end_time IS NULL 
+                 AND (julianday('now') - julianday(ls.start_time)) * 24 * 60 > ?`,
+                [config.bot.maxIntermediateHours * 60],
+                (err, rows) => {
+                    if (err) reject(err);
+                    else resolve(rows || []);
+                }
+            );
+        });
+        
+        if (overtimeSessions.length > 0) {
+            console.log(`🚨 Found ${overtimeSessions.length} overtime sessions during startup`);
+            
+            for (const session of overtimeSessions) {
+                const duration = Math.round((new Date() - new Date(session.start_time)) / (1000 * 60));
+                console.log(`⚠️ Overtime: ${session.user_name} - ${duration} minutes (auto-converting to half-day)`);
+                
+                // Auto-convert to half-day leave
+                try {
+                    await db.endLeaveSession(session.user_id, true); // true = mark as half-day
+                    
+                    // Notify HR about the auto-conversion
+                    if (config.bot.leaveApprovalChannel) {
+                        const message = `🔄 *Auto-Recovery Notice*\n\n${session.user_name}'s intermediate logout exceeded ${config.bot.maxIntermediateHours}h during system downtime and has been automatically converted to half-day leave.\n\n⏱️ *Duration:* ${Utils.formatDuration(duration)}\n📅 *Date:* ${session.date}\n\n<@${config.bot.hrTag}> - Please note for payroll processing.`;
+                        
+                        await app.client.chat.postMessage({
+                            channel: config.bot.leaveApprovalChannel,
+                            text: message,
+                            blocks: [
+                                {
+                                    type: 'section',
+                                    text: {
+                                        type: 'mrkdwn',
+                                        text: message
+                                    }
+                                }
+                            ]
+                        });
+                    }
+                } catch (conversionError) {
+                    console.log(`❌ Failed to auto-convert session for ${session.user_name}: ${conversionError.message}`);
+                }
+            }
+        }
+        
+        // Check for pending leave requests older than 24 hours
+        const staleRequests = await new Promise((resolve, reject) => {
+            db.db.all(
+                `SELECT lr.*, u.name as user_name 
+                 FROM leave_requests lr 
+                 JOIN users u ON lr.user_id = u.id 
+                 WHERE lr.status = 'pending' 
+                 AND (julianday('now') - julianday(lr.requested_at)) > 1`,
+                (err, rows) => {
+                    if (err) reject(err);
+                    else resolve(rows || []);
+                }
+            );
+        });
+        
+        if (staleRequests.length > 0) {
+            console.log(`📋 Found ${staleRequests.length} stale leave requests (>24h old)`);
+            
+            // Just log them for now, admin can take action
+            for (const request of staleRequests.slice(0, 3)) {
+                const age = Math.round((new Date() - new Date(request.requested_at)) / (1000 * 60 * 60));
+                console.log(`📋 Stale: ${request.user_name} - ${request.leave_type} leave (${age}h ago)`);
+            }
+        }
+        
+    } catch (error) {
+        console.log(`⚠️ Urgent issues check failed: ${error.message}`);
+    }
 }
 
 // Warmup function to ensure service is ready
@@ -4203,6 +4563,9 @@ async function startApp(retryCount = 0) {
         // Start your app
         await app.start();
         console.log('⚡️ Attendance Bot is running!');
+        
+        // Perform startup data recovery and health check
+        await performStartupRecovery();
         console.log('📍 Configuration:');
         console.log(`  • Max intermediate hours: ${config.bot.maxIntermediateHours}h`);
         console.log(`  • Transparency channel: ${config.bot.transparencyChannel}`);
