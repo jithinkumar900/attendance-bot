@@ -3855,7 +3855,8 @@ app.view('planned_leave_modal', async ({ ack, body, client, view }) => {
             {
                 startDate: startDate,
                 endDate: endDate,
-                leaveDurationDays: daysDiff
+                leaveDurationDays: daysDiff,
+                leaveSubtype: leaveType
             }
         );
         
@@ -4454,7 +4455,7 @@ app.action('approve_leave', async ({ ack, body, client, action }) => {
             // Post planned leave approval to transparency channel
             const plannedLeaveMessage = Utils.formatPlannedLeaveMessage(
                 leaveRequest.user_name, 
-                'full_day', // Default to full day for now
+                leaveRequest.leave_subtype || 'full_day', // Use actual leave subtype
                 dateRange, 
                 leaveRequest.leave_duration_days,
                 leaveRequest.reason, 
@@ -4545,8 +4546,7 @@ app.action('deny_leave', async ({ ack, body, client, action }) => {
         const denierInfo = await client.users.info({ user: denierId });
         const denierName = denierInfo.user.real_name || denierInfo.user.name;
         
-        // Update leave request status
-        await db.updateLeaveRequestStatus(requestId, 'denied', denierId);
+        // Update leave request statusg      await db.updateLeaveRequestStatus(requestId, 'denied', denierId);
         
         // Notify user
         const leaveTypeText = leaveRequest.leave_type === 'intermediate' ? 'intermediate logout' :
