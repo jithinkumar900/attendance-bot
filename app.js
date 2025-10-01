@@ -1232,6 +1232,22 @@ app.action('select_early_logout', async ({ ack, body, client }) => {
                     },
                     {
                         type: 'input',
+                        block_id: 'team',
+                        element: {
+                            type: 'static_select',
+                            placeholder: { type: 'plain_text', text: 'Select your team' },
+                            action_id: 'team_select',
+                            options: [
+                                { text: { type: 'plain_text', text: 'PM' }, value: 'pm' },
+                                { text: { type: 'plain_text', text: 'BD' }, value: 'bd' },
+                                { text: { type: 'plain_text', text: 'Accounts' }, value: 'accounts' }
+                            ],
+                            initial_option: { text: { type: 'plain_text', text: 'PM' }, value: 'pm' }
+                        },
+                        label: { type: 'plain_text', text: '👥 Team' }
+                    },
+                    {
+                        type: 'input',
                         block_id: 'standard_end_time',
                         element: {
                             type: 'timepicker',
@@ -1324,6 +1340,22 @@ app.action('select_late_login', async ({ ack, body, client }) => {
                                 initial_date: new Date().toISOString().split('T')[0]
                             },
                             label: { type: 'plain_text', text: '📅 Late Login Date' }
+                        },
+                        {
+                            type: 'input',
+                            block_id: 'team',
+                            element: {
+                                type: 'static_select',
+                                placeholder: { type: 'plain_text', text: 'Select your team' },
+                                action_id: 'team_select',
+                                options: [
+                                    { text: { type: 'plain_text', text: 'PM' }, value: 'pm' },
+                                    { text: { type: 'plain_text', text: 'BD' }, value: 'bd' },
+                                    { text: { type: 'plain_text', text: 'Accounts' }, value: 'accounts' }
+                                ],
+                                initial_option: { text: { type: 'plain_text', text: 'PM' }, value: 'pm' }
+                            },
+                            label: { type: 'plain_text', text: '👥 Team' }
                         },
                         {
                             type: 'input',
@@ -3200,6 +3232,7 @@ app.view('intermediate_logout_modal', async ({ ack, body, client, view }) => {
         
         // Get leave date and times
         const leaveDate = values.leave_date?.leave_date_select?.selected_date;
+        const team = values.team?.team_select?.selected_option?.value || 'pm';
         const departureTime = values.departure_time?.departure_time_select?.selected_time;
         const returnTime = values.return_time?.return_time_select?.selected_time;
         
@@ -3310,9 +3343,13 @@ app.view('intermediate_logout_modal', async ({ ack, body, client, view }) => {
                 plannedDuration: durationMinutes,
                 expectedReturnTime: returnDisplay,
                 departureTime: departureDisplay,
-                leaveDate: leaveDate
+                leaveDate: leaveDate,
+                team: team
             }
         );
+        
+        // Get team lead information
+        const teamLead = getTeamLead(team);
         
         // Send approval request to leave-approval channel with interactive buttons
         const approvalMessage = {
@@ -3322,7 +3359,7 @@ app.view('intermediate_logout_modal', async ({ ack, body, client, view }) => {
                     type: 'section',
                     text: {
                         type: 'mrkdwn',
-                        text: `🔄 *Leave Request - Intermediate Logout*\n\n👤 *Employee:* ${userName}\n${!isToday ? `📅 *Date:* ${formattedLeaveDate}\n` : ''}🚪 *Departure:* ${isToday ? formattedDepartureTime : `${formattedDepartureTime}`}\n🔙 *Expected Return:* ${isToday ? formattedReturnTime : `${formattedReturnTime}`}\n⏰ *Duration:* ${formattedDuration}\n📝 *Reason:* ${reason}\n\n🔄 *Task Escalation:*\n${taskEscalation}\n\n📋 <@${config.bot.leaveApprovalTag}> - Please review this leave request.`
+                        text: `🔄 *Leave Request - Intermediate Logout*\n\n👤 *Employee:* ${userName}\n👥 *Team:* ${teamLead.name}\n${!isToday ? `📅 *Date:* ${formattedLeaveDate}\n` : ''}🚪 *Departure:* ${isToday ? formattedDepartureTime : `${formattedDepartureTime}`}\n🔙 *Expected Return:* ${isToday ? formattedReturnTime : `${formattedReturnTime}`}\n⏰ *Duration:* ${formattedDuration}\n📝 *Reason:* ${reason}\n\n🔄 *Task Escalation:*\n${taskEscalation}\n\n📋 <@${teamLead.leadTag}> (${teamLead.leadName}) - Please review this leave request.`
                     }
                 },
                 {
@@ -3413,6 +3450,7 @@ app.view('early_logout_modal', async ({ ack, body, client, view }) => {
         
         // Get date and times
         const earlyDate = values.early_logout_date?.early_date_select?.selected_date;
+        const team = values.team?.team_select?.selected_option?.value || 'pm';
         const standardEndTime = values.standard_end_time?.standard_end_time_select?.selected_time;
         const earlyDepartureTime = values.early_departure_time?.early_departure_time_select?.selected_time;
         
@@ -3484,9 +3522,13 @@ app.view('early_logout_modal', async ({ ack, body, client, view }) => {
                 leaveDate: earlyDate,
                 standardEndTime: formattedStandardEndTime,
                 shortfallMinutes: shortfallMinutes,
-                departureTime: formattedEarlyDepartureTime
+                departureTime: formattedEarlyDepartureTime,
+                team: team
             }
         );
+        
+        // Get team lead information
+        const teamLead = getTeamLead(team);
         
         // Send approval request to leave-approval channel with interactive buttons
         const isToday = earlyDate === new Date().toISOString().split('T')[0];
@@ -3497,7 +3539,7 @@ app.view('early_logout_modal', async ({ ack, body, client, view }) => {
                     type: 'section',
                     text: {
                         type: 'mrkdwn',
-                        text: `🏃‍♂️ *Leave Request - Early Logout*\n\n👤 *Employee:* ${userName}\n${!isToday ? `📅 *Date:* ${formattedDate}\n` : ''}🕘 *Standard End:* ${formattedStandardEndTime}\n🚪 *Early Departure:* ${formattedEarlyDepartureTime}\n⏰ *Time Shortfall:* ${formattedShortfall}\n📝 *Reason:* ${reason}\n\n🔄 *Task Escalation:*\n${taskEscalation}\n\n📋 <@${config.bot.leaveApprovalTag}> - Please review this early logout request.`
+                        text: `🏃‍♂️ *Leave Request - Early Logout*\n\n👤 *Employee:* ${userName}\n👥 *Team:* ${teamLead.name}\n${!isToday ? `📅 *Date:* ${formattedDate}\n` : ''}🕘 *Standard End:* ${formattedStandardEndTime}\n🚪 *Early Departure:* ${formattedEarlyDepartureTime}\n⏰ *Time Shortfall:* ${formattedShortfall}\n📝 *Reason:* ${reason}\n\n🔄 *Task Escalation:*\n${taskEscalation}\n\n📋 <@${teamLead.leadTag}> (${teamLead.leadName}) - Please review this early logout request.`
                     }
                 },
                 {
@@ -3575,6 +3617,7 @@ app.view('late_login_modal', async ({ ack, body, client, view }) => {
         
         // Get date and times
         const lateDate = values.late_login_date?.late_date_select?.selected_date;
+        const team = values.team?.team_select?.selected_option?.value || 'pm';
         const standardStartTime = values.standard_start_time?.standard_start_time_select?.selected_time;
         const actualLoginTime = values.actual_login_time?.actual_login_time_select?.selected_time;
         
@@ -3634,9 +3677,13 @@ app.view('late_login_modal', async ({ ack, body, client, view }) => {
                 leaveDate: lateDate,
                 standardStartTime: formattedStandardStartTime,
                 actualLoginTime: formattedActualLoginTime,
-                shortfallMinutes: shortfallMinutes
+                shortfallMinutes: shortfallMinutes,
+                team: team
             }
         );
+        
+        // Get team lead information
+        const teamLead = getTeamLead(team);
         
         // Send approval request to leave-approval channel with interactive buttons
         const isToday = lateDate === new Date().toISOString().split('T')[0];
@@ -3647,7 +3694,7 @@ app.view('late_login_modal', async ({ ack, body, client, view }) => {
                     type: 'section',
                     text: {
                         type: 'mrkdwn',
-                        text: `🕐 *Leave Request - Late Login*\n\n👤 *Employee:* ${userName}\n${!isToday ? `📅 *Date:* ${formattedDate}\n` : ''}🕘 *Standard Start:* ${formattedStandardStartTime}\n🚪 *Actual Login:* ${formattedActualLoginTime}\n⏰ *Time Shortfall:* ${formattedShortfall}\n📝 *Reason:* ${reason}\n\n🔄 *Task Escalation:*\n${taskEscalation}\n\n📋 <@${config.bot.leaveApprovalTag}> - Please review this late login request.`
+                        text: `🕐 *Leave Request - Late Login*\n\n👤 *Employee:* ${userName}\n👥 *Team:* ${teamLead.name}\n${!isToday ? `📅 *Date:* ${formattedDate}\n` : ''}🕘 *Standard Start:* ${formattedStandardStartTime}\n🚪 *Actual Login:* ${formattedActualLoginTime}\n⏰ *Time Shortfall:* ${formattedShortfall}\n📝 *Reason:* ${reason}\n\n🔄 *Task Escalation:*\n${taskEscalation}\n\n📋 <@${teamLead.leadTag}> (${teamLead.leadName}) - Please review this late login request.`
                     }
                 },
                 {
@@ -4558,11 +4605,14 @@ app.action('approve_leave', async ({ ack, body, client, action }) => {
             ]
         });
         
+        // Get team lead information for approval notification
+        const teamLead = getTeamLead(leaveRequest.team || 'pm');
+        
         // Send threaded reply for HR notification  
         await client.chat.postMessage({
             channel: body.channel.id,
             thread_ts: body.message.ts,
-            text: `✅ *Approval Notification*\n\n${approverName} has approved this leave request at ${Utils.getCurrentIST()}\n\n📋 <@${config.bot.hrTag}> - Please take appropriate steps for this approval.`
+            text: `✅ *Approval Notification*\n\n${approverName} (${teamLead.leadName}) has approved this leave request at ${Utils.getCurrentIST()}\n\n📋 <@${config.bot.hrTag}> - Please take appropriate steps for this approval.`
         });
         
     } catch (error) {
@@ -4642,11 +4692,14 @@ app.action('deny_leave', async ({ ack, body, client, action }) => {
             ]
         });
         
+        // Get team lead information for denial notification
+        const teamLead = getTeamLead(leaveRequest.team || 'pm');
+        
         // Send threaded reply for HR notification
         await client.chat.postMessage({
             channel: body.channel.id,
             thread_ts: body.message.ts,
-            text: `❌ *Denial Notification*\n\n${denierName} has denied this leave request at ${Utils.getCurrentIST()}\n\n📋 <@${config.bot.hrTag}> - Please take appropriate steps for this denial.`
+            text: `❌ *Denial Notification*\n\n${denierName} (${teamLead.leadName}) has denied this leave request at ${Utils.getCurrentIST()}\n\n📋 <@${config.bot.hrTag}> - Please take appropriate steps for this denial.`
         });
         
     } catch (error) {
