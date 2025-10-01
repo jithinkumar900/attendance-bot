@@ -15,24 +15,23 @@ const config = {
         adminPassword: process.env.ADMIN_PASSWORD || 'admin123',
         transparencyChannel: process.env.TRANSPARENCY_CHANNEL || '#intermediate-logout',
         leaveApprovalChannel: process.env.LEAVE_APPROVAL_CHANNEL || '#leave-approval',
-        hrTag: process.env.HR_TAG || 'U1234567890',
-        leaveApprovalTag: process.env.LEAVE_APPROVAL_TAG || 'U0987654321'
+        hrTag: process.env.HR_TAG || 'U1234567890'
     },
     teams: {
         pm: {
             name: "PM",
-            leadTag: "U029BPF320H",
-            leadName: "Jesna S"
+            leadTag: process.env.PM_TEAM_LEAD_ID || "U029BPF320H",
+            leadName: process.env.PM_TEAM_LEAD_NAME || "Jesna S"
         },
         bd: {
             name: "BD", 
-            leadTag: "U028HPCPKJA",
-            leadName: "Sruthi Raj"
+            leadTag: process.env.BD_TEAM_LEAD_ID || "U028HPCPKJA",
+            leadName: process.env.BD_TEAM_LEAD_NAME || "Sruthi Raj"
         },
         accounts: {
             name: "Accounts",
-            leadTag: "U03335B81L3", 
-            leadName: "Mohit Madaan"
+            leadTag: process.env.ACCOUNTS_TEAM_LEAD_ID || "U03335B81L3", 
+            leadName: process.env.ACCOUNTS_TEAM_LEAD_NAME || "Mohit Madaan"
         }
     },
     notifications: {
@@ -4976,8 +4975,10 @@ async function startApp(retryCount = 0) {
         console.log(`  • Max intermediate hours: ${config.bot.maxIntermediateHours}h`);
         console.log(`  • Transparency channel: ${config.bot.transparencyChannel}`);
         console.log(`  • Leave approval channel: ${config.bot.leaveApprovalChannel}`);
-        console.log(`  • Leave approval access: Anyone in the ${config.bot.leaveApprovalChannel} channel`);
-        console.log(`  • Leave approval tag: ${config.bot.leaveApprovalTag} (User ID required)`);
+        console.log(`  • Leave approval access: Team-based approval system`);
+        console.log(`  • PM Team Lead: ${config.teams.pm.leadName} (${config.teams.pm.leadTag})`);
+        console.log(`  • BD Team Lead: ${config.teams.bd.leadName} (${config.teams.bd.leadTag})`);
+        console.log(`  • Accounts Team Lead: ${config.teams.accounts.leadName} (${config.teams.accounts.leadTag})`);
         console.log(`  • HR tag: ${config.bot.hrTag} (User ID required)`);
         console.log(`  • Admin notifications: ${config.notifications.notifyChannel ? '✅ ' + config.notifications.notifyChannel : '❌ Disabled'}`);
         console.log(`  • Admin password set: ${config.bot.adminPassword ? '✅' : '❌'}`);
