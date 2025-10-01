@@ -233,6 +233,40 @@ class Database {
                 }
             }
         );
+
+        // Migration: Add team column for team-based approvals
+        this.db.run(
+            `ALTER TABLE leave_requests ADD COLUMN team TEXT DEFAULT 'pm'`,
+            (err) => {
+                if (err) {
+                    // This is expected if the column already exists
+                    if (err.message.includes('duplicate column name')) {
+                        console.log('✅ Migration: team column already exists');
+                    } else {
+                        console.error('Migration error:', err);
+                    }
+                } else {
+                    console.log('✅ Migration: Added team column to leave_requests');
+                }
+            }
+        );
+
+        // Migration: Add team column to users table
+        this.db.run(
+            `ALTER TABLE users ADD COLUMN team TEXT DEFAULT 'pm'`,
+            (err) => {
+                if (err) {
+                    // This is expected if the column already exists
+                    if (err.message.includes('duplicate column name')) {
+                        console.log('✅ Migration: team column already exists in users table');
+                    } else {
+                        console.error('Migration error:', err);
+                    }
+                } else {
+                    console.log('✅ Migration: Added team column to users table');
+                }
+            }
+        );
     }
 
     // User management
@@ -719,18 +753,19 @@ class Database {
                 shortfallMinutes,
                 standardStartTime,
                 actualLoginTime,
-                leaveSubtype
+                leaveSubtype,
+                team
             } = additionalData;
 
             this.db.run(
                 `INSERT INTO leave_requests 
                 (user_id, user_name, leave_type, reason, task_escalation, planned_duration, 
                 expected_return_time, departure_time, leave_date, start_date, end_date, leave_duration_days,
-                standard_end_time, shortfall_minutes, standard_start_time, actual_login_time, leave_subtype) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                standard_end_time, shortfall_minutes, standard_start_time, actual_login_time, leave_subtype, team) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [userId, userName, leaveType, reason, taskEscalation, plannedDuration, 
                 expectedReturnTime, departureTime, leaveDate, startDate, endDate, leaveDurationDays,
-                standardEndTime, shortfallMinutes, standardStartTime, actualLoginTime, leaveSubtype || 'full_day'],
+                standardEndTime, shortfallMinutes, standardStartTime, actualLoginTime, leaveSubtype || 'full_day', team || 'pm'],
                 function(err) {
                     if (err) reject(err);
                     else resolve(this.lastID);

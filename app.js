@@ -18,6 +18,23 @@ const config = {
         hrTag: process.env.HR_TAG || 'U1234567890',
         leaveApprovalTag: process.env.LEAVE_APPROVAL_TAG || 'U0987654321'
     },
+    teams: {
+        pm: {
+            name: "PM",
+            leadTag: "U029BPF320H",
+            leadName: "Jesna S"
+        },
+        bd: {
+            name: "BD", 
+            leadTag: "U028HPCPKJA",
+            leadName: "Sruthi Raj"
+        },
+        accounts: {
+            name: "Accounts",
+            leadTag: "U03335B81L3", 
+            leadName: "Mohit Madaan"
+        }
+    },
     notifications: {
         // Optional notification channel - only used for important admin notifications
         notifyChannel: process.env.NOTIFY_CHANNEL || null, // Set to null to disable
@@ -394,6 +411,16 @@ function updateActivity() {
     lastActivityTime = new Date();
     lastSlackActivity = new Date();
     botHealthy = true;
+}
+
+// Helper function to get team lead information
+function getTeamLead(teamKey) {
+    const team = config.teams[teamKey];
+    if (!team) {
+        // Fallback to PM team if team not found
+        return config.teams.pm;
+    }
+    return team;
 }
 
 // Bot health monitoring system
@@ -1485,6 +1512,22 @@ app.command('/intermediate_logout', async ({ command, ack, client }) => {
                     },
                     {
                         type: 'input',
+                        block_id: 'team',
+                        element: {
+                            type: 'static_select',
+                            placeholder: { type: 'plain_text', text: 'Select your team' },
+                            action_id: 'team_select',
+                            options: [
+                                { text: { type: 'plain_text', text: 'PM' }, value: 'pm' },
+                                { text: { type: 'plain_text', text: 'BD' }, value: 'bd' },
+                                { text: { type: 'plain_text', text: 'Accounts' }, value: 'accounts' }
+                            ],
+                            initial_option: { text: { type: 'plain_text', text: 'PM' }, value: 'pm' }
+                        },
+                        label: { type: 'plain_text', text: '👥 Team' }
+                    },
+                    {
+                        type: 'input',
                         block_id: 'departure_time',
                         element: {
                             type: 'timepicker',
@@ -1607,6 +1650,22 @@ app.command('/planned', async ({ command, ack, client }) => {
                             initial_option: { text: { type: 'plain_text', text: 'Full Day' }, value: 'full_day' }
                         },
                         label: { type: 'plain_text', text: '📋 Leave Type' }
+                    },
+                    {
+                        type: 'input',
+                        block_id: 'team',
+                        element: {
+                            type: 'static_select',
+                            placeholder: { type: 'plain_text', text: 'Select your team' },
+                            action_id: 'team_select',
+                            options: [
+                                { text: { type: 'plain_text', text: 'PM' }, value: 'pm' },
+                                { text: { type: 'plain_text', text: 'BD' }, value: 'bd' },
+                                { text: { type: 'plain_text', text: 'Accounts' }, value: 'accounts' }
+                            ],
+                            initial_option: { text: { type: 'plain_text', text: 'PM' }, value: 'pm' }
+                        },
+                        label: { type: 'plain_text', text: '👥 Team' }
                     },
                     {
                         type: 'input',
@@ -3771,6 +3830,7 @@ app.view('planned_leave_modal', async ({ ack, body, client, view }) => {
         
         // Get form values
         const leaveType = values.leave_type?.type_select?.selected_option?.value || 'full_day';
+        const team = values.team?.team_select?.selected_option?.value || 'pm';
         const startDate = values.start_date?.start_date_select?.selected_date;
         const endDate = values.end_date?.end_date_select?.selected_date;
         const reason = values.leave_reason?.reason_input?.value?.trim() || '';
@@ -3856,9 +3916,13 @@ app.view('planned_leave_modal', async ({ ack, body, client, view }) => {
                 startDate: startDate,
                 endDate: endDate,
                 leaveDurationDays: daysDiff,
-                leaveSubtype: leaveType
+                leaveSubtype: leaveType,
+                team: team
             }
         );
+        
+        // Get team lead information
+        const teamLead = getTeamLead(team);
         
         // Send approval request to leave-approval channel with interactive buttons
         const approvalMessage = {
@@ -3868,7 +3932,7 @@ app.view('planned_leave_modal', async ({ ack, body, client, view }) => {
                     type: 'section',
                     text: {
                         type: 'mrkdwn',
-                        text: `📅 *Leave Request - Planned Leave*\n\n👤 *Employee:* ${userName}\n📅 *Dates:* ${dateRange}\n📋 *Type:* ${Utils.formatLeaveType(leaveType)}\n📝 *Reason:* ${reason}\n⏱️ *Duration:* ${daysDiff} day${daysDiff > 1 ? 's' : ''}\n\n🔄 *Task Escalation:*\n${taskEscalation}\n\n📋 <@${config.bot.leaveApprovalTag}> - Please review this leave request.`
+                        text: `📅 *Leave Request - Planned Leave*\n\n👤 *Employee:* ${userName}\n👥 *Team:* ${teamLead.name}\n📅 *Dates:* ${dateRange}\n📋 *Type:* ${Utils.formatLeaveType(leaveType)}\n📝 *Reason:* ${reason}\n⏱️ *Duration:* ${daysDiff} day${daysDiff > 1 ? 's' : ''}\n\n🔄 *Task Escalation:*\n${taskEscalation}\n\n📋 <@${teamLead.leadTag}> (${teamLead.leadName}) - Please review this leave request.`
                     }
                 },
                 {
