@@ -3358,7 +3358,7 @@ app.view('intermediate_logout_modal', async ({ ack, body, client, view }) => {
                     type: 'section',
                     text: {
                         type: 'mrkdwn',
-                        text: `🔄 *Leave Request - Intermediate Logout*\n\n👤 *Employee:* ${userName}\n👥 *Team:* ${teamLead.name}\n${!isToday ? `📅 *Date:* ${formattedLeaveDate}\n` : ''}🚪 *Departure:* ${isToday ? formattedDepartureTime : `${formattedDepartureTime}`}\n🔙 *Expected Return:* ${isToday ? formattedReturnTime : `${formattedReturnTime}`}\n⏰ *Duration:* ${formattedDuration}\n📝 *Reason:* ${reason}\n\n🔄 *Task Escalation:*\n${taskEscalation}\n\n📋 <@${teamLead.leadTag}> (${teamLead.leadName}) - Please review this leave request.`
+                        text: `🔄 *Leave Request - Intermediate Logout*\n\n👤 *Employee:* ${userName}\n👥 *Team:* ${teamLead.name}\n${!isToday ? `📅 *Date:* ${formattedLeaveDate}\n` : ''}🚪 *Departure:* ${isToday ? formattedDepartureTime : `${formattedDepartureTime}`}\n🔙 *Expected Return:* ${isToday ? formattedReturnTime : `${formattedReturnTime}`}\n⏰ *Duration:* ${formattedDuration}\n📝 *Reason:* ${reason}\n\n🔄 *Task Escalation:*\n${taskEscalation}\n\n📋 <@${teamLead.leadTag}> - Please review this leave request.`
                     }
                 },
                 {
@@ -3538,7 +3538,7 @@ app.view('early_logout_modal', async ({ ack, body, client, view }) => {
                     type: 'section',
                     text: {
                         type: 'mrkdwn',
-                        text: `🏃‍♂️ *Leave Request - Early Logout*\n\n👤 *Employee:* ${userName}\n👥 *Team:* ${teamLead.name}\n${!isToday ? `📅 *Date:* ${formattedDate}\n` : ''}🕘 *Standard End:* ${formattedStandardEndTime}\n🚪 *Early Departure:* ${formattedEarlyDepartureTime}\n⏰ *Time Shortfall:* ${formattedShortfall}\n📝 *Reason:* ${reason}\n\n🔄 *Task Escalation:*\n${taskEscalation}\n\n📋 <@${teamLead.leadTag}> (${teamLead.leadName}) - Please review this early logout request.`
+                        text: `🏃‍♂️ *Leave Request - Early Logout*\n\n👤 *Employee:* ${userName}\n👥 *Team:* ${teamLead.name}\n${!isToday ? `📅 *Date:* ${formattedDate}\n` : ''}🕘 *Standard End:* ${formattedStandardEndTime}\n🚪 *Early Departure:* ${formattedEarlyDepartureTime}\n⏰ *Time Shortfall:* ${formattedShortfall}\n📝 *Reason:* ${reason}\n\n🔄 *Task Escalation:*\n${taskEscalation}\n\n📋 <@${teamLead.leadTag}> - Please review this early logout request.`
                     }
                 },
                 {
@@ -3693,7 +3693,7 @@ app.view('late_login_modal', async ({ ack, body, client, view }) => {
                     type: 'section',
                     text: {
                         type: 'mrkdwn',
-                        text: `🕐 *Leave Request - Late Login*\n\n👤 *Employee:* ${userName}\n👥 *Team:* ${teamLead.name}\n${!isToday ? `📅 *Date:* ${formattedDate}\n` : ''}🕘 *Standard Start:* ${formattedStandardStartTime}\n🚪 *Actual Login:* ${formattedActualLoginTime}\n⏰ *Time Shortfall:* ${formattedShortfall}\n📝 *Reason:* ${reason}\n\n🔄 *Task Escalation:*\n${taskEscalation}\n\n📋 <@${teamLead.leadTag}> (${teamLead.leadName}) - Please review this late login request.`
+                        text: `🕐 *Leave Request - Late Login*\n\n👤 *Employee:* ${userName}\n👥 *Team:* ${teamLead.name}\n${!isToday ? `📅 *Date:* ${formattedDate}\n` : ''}🕘 *Standard Start:* ${formattedStandardStartTime}\n🚪 *Actual Login:* ${formattedActualLoginTime}\n⏰ *Time Shortfall:* ${formattedShortfall}\n📝 *Reason:* ${reason}\n\n🔄 *Task Escalation:*\n${taskEscalation}\n\n📋 <@${teamLead.leadTag}> - Please review this late login request.`
                     }
                 },
                 {
@@ -3978,7 +3978,7 @@ app.view('planned_leave_modal', async ({ ack, body, client, view }) => {
                     type: 'section',
                     text: {
                         type: 'mrkdwn',
-                        text: `📅 *Leave Request - Planned Leave*\n\n👤 *Employee:* ${userName}\n👥 *Team:* ${teamLead.name}\n📅 *Dates:* ${dateRange}\n📋 *Type:* ${Utils.formatLeaveType(leaveType)}\n📝 *Reason:* ${reason}\n⏱️ *Duration:* ${daysDiff} day${daysDiff > 1 ? 's' : ''}\n\n🔄 *Task Escalation:*\n${taskEscalation}\n\n📋 <@${teamLead.leadTag}> (${teamLead.leadName}) - Please review this leave request.`
+                        text: `📅 *Leave Request - Planned Leave*\n\n👤 *Employee:* ${userName}\n👥 *Team:* ${teamLead.name}\n📅 *Dates:* ${dateRange}\n📋 *Type:* ${Utils.formatLeaveType(leaveType)}\n📝 *Reason:* ${reason}\n⏱️ *Duration:* ${daysDiff} day${daysDiff > 1 ? 's' : ''}\n\n🔄 *Task Escalation:*\n${taskEscalation}\n\n📋 <@${teamLead.leadTag}> - Please review this leave request.`
                     }
                 },
                 {
@@ -4611,7 +4611,7 @@ app.action('approve_leave', async ({ ack, body, client, action }) => {
         await client.chat.postMessage({
             channel: body.channel.id,
             thread_ts: body.message.ts,
-            text: `✅ *Approval Notification*\n\n${approverName} (${teamLead.leadName}) has approved this leave request at ${Utils.getCurrentIST()}\n\n📋 <@${config.bot.hrTag}> - Please take appropriate steps for this approval.`
+            text: `✅ *Approval Notification*\n\n${approverName} has approved this leave request at ${Utils.getCurrentIST()}\n\n📋 <@${config.bot.hrTag}> - Please take appropriate steps for this approval.`
         });
         
     } catch (error) {
@@ -4698,7 +4698,7 @@ app.action('deny_leave', async ({ ack, body, client, action }) => {
         await client.chat.postMessage({
             channel: body.channel.id,
             thread_ts: body.message.ts,
-            text: `❌ *Denial Notification*\n\n${denierName} (${teamLead.leadName}) has denied this leave request at ${Utils.getCurrentIST()}\n\n📋 <@${config.bot.hrTag}> - Please take appropriate steps for this denial.`
+            text: `❌ *Denial Notification*\n\n${denierName} has denied this leave request at ${Utils.getCurrentIST()}\n\n📋 <@${config.bot.hrTag}> - Please take appropriate steps for this denial.`
         });
         
     } catch (error) {
